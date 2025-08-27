@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시판 홈페이지</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- 헤더 -->
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <i class="fas fa-bullhorn"></i>
+                <h1>커뮤니티 게시판</h1>
+            </div>
+            <nav class="nav">
+                <ul>
+                    <li><a href="#home" class="active">홈</a></li>
+                    <li><a href="#board">게시판</a></li>
+                    <li><a href="#notice">공지사항</a></li>
+                    <li><a href="#contact">문의하기</a></li>
+                </ul>
+            </nav>
+            <div class="user-actions">
+                <button class="btn-login">로그인</button>
+                <button class="btn-signup">회원가입</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 콘텐츠 -->
+    <main class="main">
+        <!-- 히어로 섹션 -->
+        <section class="hero">
+            <div class="hero-content">
+                <h2>다양한 이야기를 나누는 공간</h2>
+                <p>커뮤니티의 소식을 확인하고 새로운 정보를 공유해보세요</p>
+                <button class="btn-primary">게시판 둘러보기</button>
+            </div>
+        </section>
+
+        <!-- 게시판 섹션 -->
+        <section class="board-section" id="board">
+            <div class="container">
+                <h2 class="section-title">인기 게시판</h2>
+                <div class="board-grid">
+                    <div class="board-card">
+                        <div class="board-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h3>자유게시판</h3>
+                        <p>자유로운 이야기를 나누는 공간입니다</p>
+                        <div class="board-stats">
+                            <span><i class="fas fa-eye"></i> 1,234</span>
+                            <span><i class="fas fa-comment"></i> 56</span>
+                        </div>
+                        <button class="btn-board">이동하기</button>
+                    </div>
+                    <div class="board-card">
+                        <div class="board-icon">
+                            <i class="fas fa-newspaper"></i>
+                        </div>
+                        <h3>뉴스게시판</h3>
+                        <p>최신 뉴스와 정보를 확인하세요</p>
+                        <div class="board-stats">
+                            <span><i class="fas fa-eye"></i> 2,156</span>
+                            <span><i class="fas fa-comment"></i> 89</span>
+                        </div>
+                        <button class="btn-board">이동하기</button>
+                    </div>
+                    <div class="board-card">
+                        <div class="board-icon">
+                            <i class="fas fa-lightbulb"></i>
+                        </div>
+                        <h3>아이디어게시판</h3>
+                        <p>창의적인 아이디어를 공유해보세요</p>
+                        <div class="board-stats">
+                            <span><i class="fas fa-eye"></i> 987</span>
+                            <span><i class="fas fa-comment"></i> 34</span>
+                        </div>
+                        <button class="btn-board">이동하기</button>
+                    </div>
+                    <div class="board-card">
+                        <div class="board-icon">
+                            <i class="fas fa-question-circle"></i>
+                        </div>
+                        <h3>질문게시판</h3>
+                        <p>궁금한 점을 물어보고 답변을 받아보세요</p>
+                        <div class="board-stats">
+                            <span><i class="fas fa-eye"></i> 1,567</span>
+                            <span><i class="fas fa-comment"></i> 123</span>
+                        </div>
+                        <button class="btn-board">이동하기</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 최신 게시글 섹션 -->
+        <section class="recent-posts">
+            <div class="container">
+                <h2 class="section-title">최신 게시글</h2>
+                <div class="posts-container">
+                    <div class="post-item">
+                        <div class="post-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="post-content">
+                            <h4>안녕하세요! 처음 가입했습니다</h4>
+                            <p>커뮤니티에 가입하게 되어서 기쁩니다. 앞으로 좋은 정보 많이 공유하겠습니다.</p>
+                            <div class="post-meta">
+                                <span class="author">김철수</span>
+                                <span class="time">2시간 전</span>
+                                <span class="board">자유게시판</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="post-item">
+                        <div class="post-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="post-content">
+                            <h4>오늘 날씨가 정말 좋네요</h4>
+                            <p>비가 그치고 맑은 하늘이 보여서 기분이 좋습니다. 여러분은 어떤 하루를 보내고 계신가요?</p>
+                            <div class="post-meta">
+                                <span class="author">이영희</span>
+                                <span class="time">4시간 전</span>
+                                <span class="board">자유게시판</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="post-item">
+                        <div class="post-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="post-content">
+                            <h4>프로그래밍 질문이 있습니다</h4>
+                            <p>JavaScript에서 비동기 처리를 할 때 Promise와 async/await의 차이점이 궁금합니다.</p>
+                            <div class="post-meta">
+                                <span class="author">박개발</span>
+                                <span class="time">6시간 전</span>
+                                <span class="board">질문게시판</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 공지사항 섹션 -->
+        <section class="notice-section" id="notice">
+            <div class="container">
+                <h2 class="section-title">공지사항</h2>
+                <div class="notice-list">
+                    <div class="notice-item">
+                        <div class="notice-badge">중요</div>
+                        <h4>게시판 이용 규칙 안내</h4>
+                        <p>모든 회원분들이 즐겁게 이용할 수 있도록 게시판 이용 규칙을 준수해주세요.</p>
+                        <span class="notice-date">2024.01.15</span>
+                    </div>
+                    <div class="notice-item">
+                        <div class="notice-badge">일반</div>
+                        <h4>서버 점검 안내</h4>
+                        <p>1월 20일 새벽 2시부터 4시까지 서버 점검이 있을 예정입니다.</p>
+                        <span class="notice-date">2024.01.14</span>
+                    </div>
+                    <div class="notice-item">
+                        <div class="notice-badge">일반</div>
+                        <h4>신규 기능 업데이트</h4>
+                        <p>게시판에 이미지 첨부 기능이 추가되었습니다. 더욱 풍부한 콘텐츠를 공유해보세요.</p>
+                        <span class="notice-date">2024.01.13</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>커뮤니티 게시판</h3>
+                    <p>다양한 이야기를 나누고 정보를 공유하는 공간입니다.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>바로가기</h4>
+                    <ul>
+                        <li><a href="#home">홈</a></li>
+                        <li><a href="#board">게시판</a></li>
+                        <li><a href="#notice">공지사항</a></li>
+                        <li><a href="#contact">문의하기</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>연락처</h4>
+                    <p>이메일: info@community.com</p>
+                    <p>전화: 02-1234-5678</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 커뮤니티 게시판. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
