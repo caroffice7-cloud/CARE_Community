@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보성 통합돌봄 메뉴판</title>
+<meta name="description" content="보성군 기본소득 지역화폐 월 20만원으로 고르는 거동불편 어르신 방문·배달형 통합돌봄 서비스 메뉴판 및 신청">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<!-- ─────────────────────────────────────────────── 머리말 -->
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <div class="brandmark">
+      <b>BMC 통합돌봄</b>
+      <span>보성군 기본소득 연계</span>
+    </div>
+    <nav class="topnav" aria-label="주요 구역">
+      <a href="#how">이용 방법</a>
+      <a href="#menu">서비스 메뉴</a>
+      <a href="#packages">추천 패키지</a>
+      <a href="#apply">신청하기</a>
+    </nav>
+    <button class="ghost" id="btn-size" type="button" aria-pressed="false">큰 글씨</button>
+    <button class="ghost" id="btn-print" type="button">인쇄</button>
+  </div>
+</header>
+
+<!-- ─────────────────────────────────────────────── 표제 -->
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">보성군 기본소득 연계 통합돌봄 서비스</p>
+    <h1>월 20만원으로<br>어르신 댁까지 찾아가는 돌봄을 고릅니다</h1>
+    <p class="lead">
+      거동이 불편해 밖으로 나서기 어려운 어르신을 위해, 식사·장보기·병원·안전·이동·말벗을
+      한 장의 메뉴판에 담았습니다. 필요한 것만 골라 담으시면 보성군 기본소득 지역화폐 카드로 결제됩니다.
+    </p>
+    <div class="hero-meta">
+      <span class="chip accent" id="limit-chip">월 200,000원 지역화폐 결제</span>
+      <span class="chip">방문·배달형 통합돌봄</span>
+      <span class="chip">신청 전화 <a id="tel-link" href="tel:">061-000-0000</a></span>
+      <span class="chip" id="doc-ver">Ver 1.0</span>
+    </div>
+
+    <h2 id="how" style="font-size:1.15em;margin-top:30px;letter-spacing:-.01em">이용 방법 <span style="color:var(--ink-3);font-weight:400;font-size:.85em">— 세 단계면 끝납니다</span></h2>
+    <div class="steps" id="steps" aria-label="이용 방법 3단계"></div>
+    <p class="steps-foot">
+      1회성 서비스는 필요할 때마다 신청하실 수 있고(잔액 차감), 월 미사용 잔액은 다음 달로 1회 이월됩니다(최대 20만원).
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────────── 본문 -->
+<div class="wrap layout">
+
+  <main>
+    <nav class="catbar" id="catbar" aria-label="서비스 분류"></nav>
+
+    <!-- 서비스 메뉴 (자바스크립트로 구성) -->
+    <div id="menu"></div>
+
+    <!-- 추천 패키지 -->
+    <section class="course" id="packages">
+      <div class="course-head">
+        <span class="course-no num">＊</span>
+        <h2>추천 패키지</h2>
+        <span class="tagline">월 20만원 지역화폐 기준</span>
+      </div>
+      <p class="course-note">어떤 것부터 골라야 할지 모르시겠다면, 어르신 상황에 가까운 구성을 그대로 담아 보신 뒤 바꾸셔도 됩니다.</p>
+      <div class="pkgs" id="packages-grid"></div>
+    </section>
+  </main>
+
+  <!-- 내 돌봄 구성 -->
+  <aside class="panel" aria-label="내 돌봄 구성">
+    <div class="panel-head">
+      <h2>내 돌봄 구성</h2>
+      <p id="avail-note">보성군 기본소득 지역화폐 월 한도 200,000원</p>
+    </div>
+
+    <div class="meter">
+      <div class="meter-bar" id="meter-bar" role="img" aria-label="예산 사용 현황"></div>
+      <div class="meter-nums">
+        <div>
+          <div class="big num" id="used" aria-live="polite">0원</div>
+          <div class="cap">월 합계</div>
+        </div>
+        <div class="meter-left" id="left"></div>
+      </div>
+    </div>
+
+    <div class="seed-note" id="seed-note" hidden>
+      <span>예시로 ① 안심 생활형이 담겨 있습니다.</span>
+      <button type="button" id="seed-clear">비우기</button>
+    </div>
+
+    <ul class="cart-list" id="cart-list"></ul>
+
+    <div class="panel-foot">
+      <div class="overwarn" id="overwarn" hidden></div>
+      <button class="cta" id="cta-apply" type="button">이 구성으로 신청하기</button>
+    </div>
+  </aside>
+</div>
+
+<!-- ─────────────────────────────────────────────── 신청서 -->
+<section class="apply" id="apply">
+  <div class="wrap">
+    <h2>돌봄 신청서</h2>
+    <p class="lead">
+      어르신 본인, 가족, 마을 담당자 누구나 대신 작성하실 수 있습니다.
+      접수되면 담당 돌봄매니저가 전화드려 방문 상담 일정을 잡고, 상담 자리에서 구성을 최종 확정합니다.
+    </p>
+
+    <form id="apply-form">
+      <div class="form-grid">
+
+        <div class="f">
+          <label for="f-name">어르신 성함<span class="req" aria-hidden="true">*</span></label>
+          <input type="text" id="f-name" name="name" required placeholder="예) 김복순" autocomplete="name">
+        </div>
+
+        <div class="f">
+          <label for="f-phone">연락 가능한 전화번호<span class="req" aria-hidden="true">*</span></label>
+          <input type="tel" id="f-phone" name="phone" required placeholder="010-0000-0000" autocomplete="tel">
+          <span class="hint">어르신 댁 전화 또는 자주 받으시는 번호</span>
+        </div>
+
+        <div class="f">
+          <label for="f-birth">태어나신 해</label>
+          <input type="number" id="f-birth" name="birthYear" min="1900" max="2010" placeholder="예) 1938">
+        </div>
+
+        <div class="f">
+          <label>성별</label>
+          <div class="radios">
+            <label><input type="radio" name="gender" value="여"> 여</label>
+            <label><input type="radio" name="gender" value="남"> 남</label>
+          </div>
+        </div>
+
+        <div class="f">
+          <label for="f-town">읍·면<span class="req" aria-hidden="true">*</span></label>
+          <select id="f-town" name="town" required>
+            <option value="">선택해 주세요</option>
+            <option>보성읍</option><option>벌교읍</option><option>노동면</option><option>미력면</option>
+            <option>겸백면</option><option>율어면</option><option>복내면</option><option>문덕면</option>
+            <option>조성면</option><option>득량면</option><option>회천면</option><option>웅치면</option>
+          </select>
+        </div>
+
+        <div class="f">
+          <label for="f-address">마을·상세 주소<span class="req" aria-hidden="true">*</span></label>
+          <input type="text" id="f-address" name="address" required placeholder="예) ○○리 ○○마을 12-3" autocomplete="street-address">
+        </div>
+
+        <div class="f full">
+          <label>어르신 거동 상태</label>
+          <div class="radios">
+            <label><input type="radio" name="mobility" value="혼자 걸으심"> 혼자 걸으심</label>
+            <label><input type="radio" name="mobility" value="지팡이·보행기 사용"> 지팡이·보행기 사용</label>
+            <label><input type="radio" name="mobility" value="휠체어 사용"> 휠체어 사용</label>
+            <label><input type="radio" name="mobility" value="거의 누워 계심"> 거의 누워 계심</label>
+          </div>
+        </div>
+
+        <div class="f full">
+          <label>거주 형태</label>
+          <div class="radios">
+            <label><input type="radio" name="living" value="혼자 사심(독거)"> 혼자 사심(독거)</label>
+            <label><input type="radio" name="living" value="어르신 두 분"> 어르신 두 분</label>
+            <label><input type="radio" name="living" value="가족과 함께"> 가족과 함께</label>
+          </div>
+        </div>
+
+        <div class="f">
+          <label for="f-gname">보호자 성함</label>
+          <input type="text" id="f-gname" name="guardianName" placeholder="예) 김철수">
+        </div>
+
+        <div class="f">
+          <label for="f-grel">어르신과의 관계</label>
+          <input type="text" id="f-grel" name="guardianRelation" placeholder="예) 아들, 딸, 이장">
+        </div>
+
+        <div class="f">
+          <label for="f-gphone">보호자 전화번호</label>
+          <input type="tel" id="f-gphone" name="guardianPhone" placeholder="010-0000-0000">
+          <span class="hint">응급 상황·월간 리포트를 받으실 번호</span>
+        </div>
+
+        <div class="f">
+          <label>지역화폐 카드</label>
+          <div class="radios">
+            <label><input type="radio" name="card" value="가지고 있음"> 가지고 있음</label>
+            <label><input type="radio" name="card" value="발급 도움 필요"> 발급 도움 필요</label>
+          </div>
+        </div>
+
+        <div class="f">
+          <label for="f-date">방문 상담 희망일</label>
+          <input type="date" id="f-date" name="visitDate">
+        </div>
+
+        <div class="f">
+          <label>희망 시간대</label>
+          <div class="radios">
+            <label><input type="radio" name="visitTime" value="오전"> 오전</label>
+            <label><input type="radio" name="visitTime" value="오후"> 오후</label>
+            <label><input type="radio" name="visitTime" value="아무 때나"> 아무 때나</label>
+          </div>
+        </div>
+
+        <div class="f full">
+          <label for="f-memo">미리 알려주실 점</label>
+          <textarea id="f-memo" name="memo" placeholder="앓고 계신 질환, 드시는 약, 음식 알레르기, 집 구조(계단·문턱), 개 사육 여부 등"></textarea>
+        </div>
+      </div>
+
+      <!-- 신청 내용 확인 -->
+      <div class="review">
+        <h3>신청하시는 구성</h3>
+        <table>
+          <caption class="cap" style="text-align:left;color:var(--ink-3);font-size:.82em;padding-bottom:6px">
+            메뉴에서 담으신 항목입니다. 바꾸시려면 위 메뉴에서 수량을 조절해 주세요.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">서비스</th>
+              <th scope="col" style="text-align:right">수량</th>
+              <th scope="col" style="text-align:right">금액</th>
+            </tr>
+          </thead>
+          <tbody id="review-body"></tbody>
+          <tfoot>
+            <tr>
+              <td>월 합계</td>
+              <td class="n" id="review-point">적립 없음</td>
+              <td class="n" id="review-total">0원</td>
+            </tr>
+            <tr>
+              <td colspan="3" style="border-top:0;font-weight:400;color:var(--ink-2);font-size:.9em" id="review-left"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- 동의 -->
+      <div class="agree">
+        <label>
+          <input type="checkbox" name="agreePrivacy" required>
+          <span><b>[필수] 개인정보 수집·이용에 동의합니다.</b>
+            <span class="sub">수집 항목: 성함·연락처·주소·건강 관련 특이사항 / 목적: 돌봄 서비스 제공 및 응급 연락 / 보유 기간: 서비스 종료 후 3년. 동의하지 않으셔도 전화로 신청하실 수 있습니다.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" name="agreeData">
+          <span><b>[선택] AI 데이터 참여에 관심이 있습니다.</b>
+            <span class="sub">방언 녹음·구술 기록·생활 맥락 데이터 참여 안내를 받습니다. 실제 참여는 별도 동의서를 쓰신 뒤에 시작되며, 모든 자료는 개인을 알아볼 수 없게 처리합니다.</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="submit-row">
+        <button class="cta" id="btn-submit" type="submit">신청서 제출하기</button>
+        <p class="form-msg" id="form-msg" role="status"></p>
+      </div>
+    </form>
+
+    <div class="done" id="done" hidden></div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────────── 운영 기준 -->
+<section class="ops">
+  <div class="wrap ops-grid">
+    <div>
+      <h2 style="font-size:1.3em">운영·정산 기준</h2>
+      <p style="color:var(--ink-3);font-size:.84em;margin:6px 0 12px">내부 검토용 — 시범사업 결과에 따라 조정될 수 있습니다.</p>
+      <table id="ops-table"></table>
+    </div>
+    <div class="next">
+      <h2 style="font-size:1.3em">계약서 작성 전 확정할 사항</h2>
+      <p style="color:var(--ink-3);font-size:.84em;margin:6px 0 0">시범 운영을 시작하기 전에 마무리해야 할 다섯 가지입니다.</p>
+      <ol>
+        <li>지역화폐 가맹점 업종 코드 확인 — 돌봄 용역·소매업 중 결제 가능 업종 구분</li>
+        <li>서비스별 제공 주체 확정 — 자사 직접수행 / 마을 주민 위탁 / 기존 재가센터 연계</li>
+        <li>배상책임보험 가입(방문 서비스 중 사고 대비) 및 종사자 안전교육 이수</li>
+        <li>시범 대상 10~20가구 선정 후 3개월 실증 → 단가 재조정</li>
+        <li>AI 데이터 참여 동의서 별도 서식 마련 — 개인정보 비식별·활용 범위 명시</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap">
+    <p><b>농업회사법인 히스메이커스 주식회사</b> · 자연사랑 생활장터 · BMC 마을방송국</p>
+    <p>본 메뉴판은 내부 검토용 초안이며, 단가는 시범사업 결과에 따라 조정될 수 있습니다.
+       신청·문의 <a href="tel:" id="tel-link2"></a></p>
+  </div>
+</footer>
+
+<!-- 모바일 하단 바 -->
+<div class="dock">
+  <div class="d-sum">
+    <b class="num" id="dock-used">0원</b>
+    <span id="dock-sub">남은 금액 200,000원</span>
+  </div>
+  <button class="cta" id="dock-apply" type="button">신청하기</button>
+</div>
+
+<!-- 안내 문구 -->
+<div id="flash" role="status" hidden
+     style="position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:60;
+            background:var(--ink);color:var(--paper);padding:11px 18px;border-radius:999px;
+            font-size:.88em;box-shadow:var(--shadow);max-width:calc(100% - 32px);text-align:center"></div>
+
+<script src="assets/config.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
