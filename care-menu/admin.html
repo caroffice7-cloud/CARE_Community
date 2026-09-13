@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>돌봄 신청 접수함</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .adm { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 26px; padding-block: 26px 60px; align-items: start; }
+  .adm table { width: 100%; border-collapse: collapse; font-size: .9em; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .adm th { text-align: left; background: var(--surface-2); color: var(--ink-2); font-size: .84em; padding: 10px 12px; font-weight: 600; }
+  .adm td { padding: 11px 12px; border-top: 1px solid var(--rule-soft); vertical-align: top; }
+  .adm tr.sel td { background: var(--tea-soft); }
+  .adm tbody tr { cursor: pointer; }
+  .adm tbody tr:hover td { background: var(--surface-2); }
+  .detail { position: sticky; top: 20px; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px; box-shadow: var(--shadow); }
+  .detail pre { white-space: pre-wrap; font-family: 'IBM Plex Mono', monospace; font-size: .78em; margin: 0; max-height: 62vh; overflow: auto; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-block: 18px 4px; }
+  .bar input { font: inherit; font-size: .9em; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px; background: var(--surface); color: var(--ink); min-width: 220px; }
+  .stat { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 14px; }
+  .stat div b { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 1.5em; font-weight: 600; }
+  .stat div span { color: var(--ink-3); font-size: .8em; }
+  @media (max-width: 900px) { .adm { grid-template-columns: 1fr; } .detail { position: static; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <div class="brandmark"><b>돌봄 신청 접수함</b><span>운영자 화면</span></div>
+    <a class="ghost" href="index.html">메뉴판으로</a>
+    <button class="ghost" id="btn-csv" type="button">엑셀(CSV) 내려받기</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="bar">
+    <input type="search" id="q" placeholder="성함·마을·접수번호로 찾기" aria-label="신청 검색">
+    <button class="ghost" id="btn-server" type="button">접수 서버에서 불러오기</button>
+    <span id="src-note" style="color:var(--ink-3);font-size:.84em"></span>
+  </div>
+
+  <div class="stat">
+    <div><b class="num" id="s-count">0</b><span>신청 건수</span></div>
+    <div><b class="num" id="s-sum">0원</b><span>월 결제 합계</span></div>
+    <div><b class="num" id="s-avg">0원</b><span>가구당 평균</span></div>
+    <div><b class="num" id="s-point">0P</b><span>적립 예정 포인트</span></div>
+  </div>
+
+  <div class="adm">
+    <div>
+      <table>
+        <thead><tr><th>접수번호 / 일시</th><th>어르신</th><th>마을</th><th style="text-align:right">월 합계</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p style="color:var(--ink-3);font-size:.82em;margin-top:12px">
+        접수 서버(구글 시트)를 연결하지 않으셨다면, 이 목록은 <b>이 기기에서 작성된 신청서</b>만 보여 줍니다.
+        방문 상담용 태블릿에서 받은 신청서를 확인하실 때 쓰세요.
+      </p>
+    </div>
+    <aside class="detail" id="detail">
+      <p style="color:var(--ink-3);font-size:.9em;margin:0">왼쪽에서 신청 건을 고르면 신청서 전문이 여기에 표시됩니다.</p>
+    </aside>
+  </div>
+</div>
+
+<script src="assets/config.js"></script>
+<script>
+(function () {
+  'use strict';
+  var CFG = window.BMC_CONFIG;
+  var KEY = 'bmc.applications.v1';
+  var list = [];
+  var filtered = [];
+  var picked = null;
+
+  function won(n) { return Number(n || 0).toLocaleString('ko-KR') + '원'; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function loadLocal() {
+    try { list = JSON.parse(localStorage.getItem(KEY) || '[]'); }
+    catch (e) { list = []; }
+    document.getElementById('src-note').textContent = '이 기기에 저장된 ' + list.length + '건';
+    render();
+  }
+
+  function render() {
+    var q = document.getElementById('q').value.trim();
+    filtered = !q ? list.slice() : list.filter(function (p) {
+      var a = p.applicant || {};
+      return [p.no, a.name, a.town, a.address, a.guardianName].join(' ').indexOf(q) >= 0;
+    });
+
+    var sum = 0, pts = 0;
+    filtered.forEach(function (p) { sum += (p.totals && p.totals.used) || 0; pts += (p.totals && p.totals.points) || 0; });
+    document.getElementById('s-count').textContent = filtered.length;
+    document.getElementById('s-sum').textContent = won(sum);
+    document.getElementById('s-avg').textContent = won(filtered.length ? Math.round(sum / filtered.length) : 0);
+    document.getElementById('s-point').textContent = pts.toLocaleString('ko-KR') + 'P';
+
+    document.getElementById('rows').innerHTML = filtered.length ? filtered.map(function (p, i) {
+      var a = p.applicant || {};
+      return '<tr data-i="' + i + '"' + (picked === i ? ' class="sel"' : '') + '>' +
+        '<td><span class="num">' + esc(p.no) + '</span><br><span style="color:var(--ink-3);font-size:.84em">' +
+        esc(new Date(p.submittedAt).toLocaleString('ko-KR')) + '</span></td>' +
+        '<td>' + esc(a.name || '-') + '<br><span style="color:var(--ink-3);font-size:.84em">' + esc(a.phone || '') + '</span></td>' +
+        '<td>' + esc((a.town || '') + ' ' + (a.address || '')) + '</td>' +
+        '<td class="num" style="text-align:right">' + won(p.totals && p.totals.used) +
+        ((p.totals && p.totals.over > 0) ? '<br><span style="color:var(--alert);font-size:.8em">초과 ' + won(p.totals.over) + '</span>' : '') +
+        '</td></tr>';
+    }).join('') : '<tr><td colspan="4" style="color:var(--ink-3);padding:26px 12px">신청 내역이 없습니다.</td></tr>';
+  }
+
+  function detail(p) {
+    var a = p.applicant || {};
+    var svc = (p.services || []).map(function (s) {
+      return '  · ' + s.name + '  ' + s.qty + '  ' + Number(s.amount).toLocaleString('ko-KR') + '원';
+    }).join('\n');
+    var dat = (p.dataParticipation || []).map(function (s) {
+      return '  · ' + s.name + '  ' + s.qty + '회  +' + Number(s.point).toLocaleString('ko-KR') + 'P';
+    }).join('\n');
+    var t = p.totals || {};
+    var text =
+      '접수번호  ' + p.no + '\n' +
+      '작성일시  ' + new Date(p.submittedAt).toLocaleString('ko-KR') + '\n\n' +
+      '어르신    ' + (a.name || '') + ' / ' + (a.birthYear || '') + '년생 ' + (a.gender || '') + '\n' +
+      '연락처    ' + (a.phone || '') + '\n' +
+      '주소      ' + (a.town || '') + ' ' + (a.address || '') + '\n' +
+      '거주·거동 ' + (a.living || '-') + ' / ' + (a.mobility || '-') + '\n' +
+      '보호자    ' + (a.guardianName || '-') + ' ' + (a.guardianRelation ? '(' + a.guardianRelation + ')' : '') + ' ' + (a.guardianPhone || '') + '\n' +
+      '지역화폐  ' + (a.card || '-') + '\n' +
+      '상담희망  ' + (a.visitDate || '협의') + ' ' + (a.visitTime || '') + '\n\n' +
+      '[신청 서비스]\n' + (svc || '  없음') + '\n' +
+      (dat ? '\n[AI 데이터 참여]\n' + dat + '\n' : '') +
+      '\n월 합계  ' + won(t.used) + '  /  사용 가능 ' + won(t.available) +
+      (t.over > 0 ? '  /  초과 ' + won(t.over) : '  /  잔액 ' + won(t.remaining)) + '\n' +
+      (a.memo ? '\n[미리 알려주신 점]\n  ' + a.memo + '\n' : '') +
+      '\n개인정보 동의 ' + (a.agreePrivacy ? 'O' : 'X') + '  ·  AI 데이터 참여 관심 ' + (a.agreeData ? 'O' : 'X');
+
+    var tel = (a.phone || '').replace(/[^0-9+]/g, '');
+    document.getElementById('detail').innerHTML =
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
+      (tel ? '<a class="ghost" href="tel:' + tel + '">어르신께 전화</a>' : '') +
+      '<button class="ghost" type="button" id="d-copy">복사</button>' +
+      '<button class="ghost" type="button" id="d-print">인쇄</button>' +
+      '</div><pre>' + esc(text) + '</pre>';
+
+    document.getElementById('d-copy').addEventListener('click', function () {
+      if (navigator.clipboard) navigator.clipboard.writeText(text);
+    });
+    document.getElementById('d-print').addEventListener('click', function () { window.print(); });
+  }
+
+  document.getElementById('rows').addEventListener('click', function (ev) {
+    var tr = ev.target.closest('tr[data-i]');
+    if (!tr) return;
+    picked = Number(tr.dataset.i);
+    render();
+    detail(filtered[picked]);
+  });
+
+  document.getElementById('q').addEventListener('input', function () { picked = null; render(); });
+
+  document.getElementById('btn-csv').addEventListener('click', function () {
+    var head = ['접수번호', '작성일시', '성함', '연락처', '읍면', '주소', '거동', '거주', '보호자', '보호자연락처', '월합계', '초과액', '적립포인트', '신청서비스', '상담희망', '메모'];
+    var rows = filtered.map(function (p) {
+      var a = p.applicant || {}, t = p.totals || {};
+      return [
+        p.no, new Date(p.submittedAt).toLocaleString('ko-KR'), a.name, a.phone, a.town, a.address,
+        a.mobility, a.living, a.guardianName, a.guardianPhone,
+        t.used, t.over, t.points,
+        (p.services || []).map(function (s) { return s.name + '×' + s.qty; }).join(' / '),
+        (a.visitDate || '') + ' ' + (a.visitTime || ''), a.memo
+      ].map(function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(',');
+    });
+    var csv = '﻿' + [head.join(',')].concat(rows).join('\r\n');
+    var url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = '돌봄신청_' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('btn-server').addEventListener('click', function () {
+    if (!CFG.endpoint) {
+      document.getElementById('src-note').textContent = '접수 서버 주소가 설정되어 있지 않습니다 (assets/config.js 의 endpoint).';
+      return;
+    }
+    var note = document.getElementById('src-note');
+    note.textContent = '불러오는 중…';
+    fetch(CFG.endpoint + '?key=' + encodeURIComponent(CFG.adminKey || ''))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!Array.isArray(data)) throw new Error('형식 오류');
+        list = data;
+        note.textContent = '접수 서버에서 ' + list.length + '건을 불러왔습니다.';
+        picked = null;
+        render();
+      })
+      .catch(function () { note.textContent = '불러오지 못했습니다. 주소와 열쇠말을 확인해 주세요.'; });
+  });
+
+  loadLocal();
+})();
+</script>
+</body>
+</html>
