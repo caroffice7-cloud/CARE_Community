@@ -25,7 +25,8 @@ var HEADERS = [
   '읍면', '상세주소', '거동상태', '거주형태',
   '보호자', '관계', '보호자연락처', '지역화폐카드',
   '상담희망일', '희망시간', '월합계', '초과액', '적립포인트',
-  '신청서비스', 'AI데이터참여', '개인정보동의', 'AI참여동의', '메모', '처리상태'
+  '신청서비스', 'AI데이터참여', '개인정보동의', 'AI참여동의', '메모', '처리상태',
+  '원본데이터(수정금지)'
 ];
 
 function getSheet_() {
@@ -61,7 +62,8 @@ function doPost(e) {
       a.visitDate, a.visitTime, t.used, t.over, t.points,
       services, dataItems,
       a.agreePrivacy ? 'O' : 'X', a.agreeData ? 'O' : 'X',
-      a.memo, '접수'
+      a.memo, '접수',
+      JSON.stringify({ services: p.services || [], dataParticipation: p.dataParticipation || [] })
     ]);
 
     notify_(p);
@@ -81,6 +83,9 @@ function doGet(e) {
   var out = [];
   for (var i = values.length - 1; i >= 1; i--) {
     var r = values[i];
+    var raw = {};
+    try { raw = r[25] ? JSON.parse(r[25]) : {}; } catch (e) { raw = {}; }
+
     out.push({
       no: r[0],
       submittedAt: r[1] instanceof Date ? r[1].toISOString() : String(r[1]),
@@ -91,8 +96,8 @@ function doGet(e) {
         card: r[13], visitDate: r[14], visitTime: r[15],
         agreePrivacy: r[21] === 'O', agreeData: r[22] === 'O', memo: r[23]
       },
-      services: [],
-      dataParticipation: [],
+      services: raw.services || [],
+      dataParticipation: raw.dataParticipation || [],
       totals: { used: Number(r[16]) || 0, over: Number(r[17]) || 0, points: Number(r[18]) || 0,
                 available: 200000 + (Number(r[18]) || 0),
                 remaining: 200000 + (Number(r[18]) || 0) - (Number(r[16]) || 0) },
