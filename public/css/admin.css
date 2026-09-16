@@ -1,0 +1,49 @@
+/* 관리자 화면 — 데이터 밀도 위주 */
+body.admin { font-size: 15px; background: #f3f4f6; }
+.admin-top { background: #111827; color: #fff; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.admin-top .title { font-weight: 800; }
+.admin-nav { display: flex; gap: 6px; flex-wrap: wrap; background: #1f2937; padding: 8px 16px; }
+.admin-nav button { background: transparent; border: 1px solid #374151; color: #d1d5db; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; }
+.admin-nav button.active { background: var(--green-600); border-color: var(--green-600); color: #fff; }
+.admin-wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.kpi .k { font-size: .82rem; color: var(--ink-soft); font-weight: 700; }
+.kpi .v { font-size: 1.5rem; font-weight: 800; color: var(--green-900); }
+.kpi.warn .v { color: var(--amber-600); }
+.kpi.danger .v { color: var(--red-600); }
+
+table { width: 100%; border-collapse: collapse; background: #fff; font-size: .92rem; }
+th, td { padding: 9px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: middle; }
+th { background: #f9fafb; font-weight: 800; color: #374151; white-space: nowrap; position: sticky; top: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:hover td { background: #fafffb; }
+.table-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: 12px; }
+
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.toolbar input, .toolbar select { padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .78rem; font-weight: 800; }
+.b-접수 { background: #e0f2fe; color: #075985; }
+.b-결제대기 { background: #fef3c7; color: #92400e; }
+.b-결제완료 { background: #dcfce7; color: #166534; }
+.b-처리중 { background: #ede9fe; color: #5b21b6; }
+.b-완료 { background: #d1fae5; color: #065f46; }
+.b-취소 { background: #fee2e2; color: #991b1b; }
+
+.panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.panel h3 { margin-top: 0; }
+.row-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.row-form input, .row-form select, .row-form textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; }
+.inline-edit { width: 100%; border: 1px solid transparent; background: transparent; padding: 5px; border-radius: 6px; }
+.inline-edit:focus { border-color: var(--green-600); background: #fff; outline: none; }
+
+dialog { border: 0; border-radius: 14px; padding: 0; max-width: 760px; width: 94%; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+.dlg-head { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+.dlg-body { padding: 18px; max-height: 70vh; overflow: auto; }
+.dlg-foot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+
+.login-box { max-width: 420px; margin: 12vh auto; }
+.mini { font-size: .82rem; color: var(--ink-soft); }
