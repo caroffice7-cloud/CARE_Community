@@ -8,7 +8,7 @@ const auth = require('../lib/auth');
 const balance = require('../lib/balance');
 const { parseOrderText } = require('../lib/parser');
 const { toCsv } = require('../lib/csv');
-const { normalizePhone, nextOrderNo, resolveItems, consentItems } = require('./public');
+const { normalizePhone, nextOrderNo, resolveItems, consentItems, normalizeServiceDate } = require('./public');
 
 const router = new Router();
 const STATUSES = ['접수', '결제대기', '결제완료', '처리중', '완료', '취소'];
@@ -16,8 +16,9 @@ const STATUSES = ['접수', '결제대기', '결제완료', '처리중', '완료
 // ---- 인증 ----
 router.post('/api/admin/login', async (req, res) => {
   const body = await readJson(req);
-  auth.login(res, body.password, req);
-  sendJson(res, 200, { ok: true });
+  const user = auth.login(res, body.loginId, body.password, req);
+  auth.audit(req, user, '로그인', `운영자 ${user.loginId}`, null);
+  sendJson(res, 200, { ok: true, user });
 });
 
 router.post('/api/admin/logout', (req, res) => {
@@ -26,7 +27,176 @@ router.post('/api/admin/logout', (req, res) => {
 });
 
 router.get('/api/admin/me', (req, res) => {
-  sendJson(res, 200, { authenticated: !!auth.currentSession(req) });
+  const user = auth.currentUser(req);
+  sendJson(res, 200, user
+    ? { authenticated: true, user: auth.publicUser(user), roles: auth.ROLES }
+    : { authenticated: false });
+});
+
+/** 본인 비밀번호 변경 */
+router.post('/api/admin/password', async (req, res) => {
+  const user = auth.requireAdmin(req);
+  const b = await readJson(req);
+  if (!auth.verifyPassword(b.current || '', user.password_hash, user.password_salt)) {
+    throw new HttpError(401, '현재 비밀번호가 올바르지 않습니다.');
+  }
+  if (String(b.next || '').length < 8) throw new HttpError(400, '새 비밀번호는 8자 이상이어야 합니다.');
+  const { hash, salt } = auth.hashPassword(b.next);
+  run('UPDATE admin_users SET password_hash = ?, password_salt = ?, must_change = 0 WHERE id = ?', hash, salt, user.id);
+  auth.audit(req, user, '비밀번호 변경', `운영자 ${user.login_id}`, null);
+  sendJson(res, 200, { ok: true });
+});
+
+// ── 운영자 계정 관리 (총괄만) ──
+router.get('/api/admin/accounts', (req, res) => {
+  auth.requireOwner(req);
+  sendJson(res, 200, {
+    roles: auth.ROLES,
+    accounts: all('SELECT id, login_id, name, role, phone, active, must_change, last_login_at, created_at FROM admin_users ORDER BY id'),
+  });
+});
+
+router.post('/api/admin/accounts', async (req, res) => {
+  const owner = auth.requireOwner(req);
+  const b = await readJson(req);
+  const loginId = String(b.loginId || '').trim();
+  if (!/^[a-z0-9_]{3,20}$/.test(loginId)) {
+    throw new HttpError(400, '아이디는 영문 소문자·숫자·밑줄 3~20자로 만들어 주세요.');
+  }
+  if (!String(b.name || '').trim()) throw new HttpError(400, '담당자 이름을 입력해 주세요.');
+  if (get('SELECT id FROM admin_users WHERE login_id = ?', loginId)) throw new HttpError(409, '이미 사용 중인 아이디입니다.');
+  const password = String(b.password || '').trim();
+  if (password.length < 8) throw new HttpError(400, '초기 비밀번호는 8자 이상이어야 합니다.');
+
+  const { hash, salt } = auth.hashPassword(password);
+  const ins = run(
+    `INSERT INTO admin_users(login_id, name, role, phone, password_hash, password_salt, must_change)
+     VALUES(?,?,?,?,?,?,1)`,
+    loginId, b.name.trim(), auth.ROLES.includes(b.role) ? b.role : '담당자', b.phone || null, hash, salt
+  );
+  auth.audit(req, owner, '운영자 계정 생성', `${loginId} (${b.role || '담당자'})`, null);
+  sendJson(res, 201, { ok: true, id: Number(ins.lastInsertRowid) });
+});
+
+router.put('/api/admin/accounts/:id', async (req, res, ctx) => {
+  const owner = auth.requireOwner(req);
+  const b = await readJson(req);
+  const target = get('SELECT * FROM admin_users WHERE id = ?', Number(ctx.params.id));
+  if (!target) throw new HttpError(404, '계정을 찾을 수 없습니다.');
+
+  const nextActive = b.active !== undefined ? (b.active ? 1 : 0) : target.active;
+  const nextRole = auth.ROLES.includes(b.role) ? b.role : target.role;
+
+  // 총괄이 한 명도 없어지는 상황을 막는다
+  const owners = get("SELECT COUNT(*) AS c FROM admin_users WHERE role = '총괄' AND active = 1").c;
+  if (target.role === '총괄' && target.active && (nextRole !== '총괄' || !nextActive) && owners <= 1) {
+    throw new HttpError(400, '총괄 관리자가 최소 한 명은 있어야 합니다.');
+  }
+
+  run('UPDATE admin_users SET name = ?, role = ?, phone = ?, active = ? WHERE id = ?',
+    b.name ?? target.name, nextRole, b.phone ?? target.phone, nextActive, target.id);
+
+  if (b.password) {
+    if (String(b.password).length < 8) throw new HttpError(400, '비밀번호는 8자 이상이어야 합니다.');
+    const { hash, salt } = auth.hashPassword(b.password);
+    run('UPDATE admin_users SET password_hash = ?, password_salt = ?, must_change = 1 WHERE id = ?', hash, salt, target.id);
+    auth.revokeSessions(target.id);
+    auth.audit(req, owner, '비밀번호 재발급', `운영자 ${target.login_id}`, null);
+  }
+  if (!nextActive) auth.revokeSessions(target.id);
+  auth.audit(req, owner, '운영자 계정 수정', `${target.login_id}`, `역할 ${nextRole} / ${nextActive ? '사용' : '중지'}`);
+  sendJson(res, 200, { ok: true });
+});
+
+/** 감사 기록 조회 (총괄만) */
+router.get('/api/admin/audit', (req, res, ctx) => {
+  auth.requireOwner(req);
+  const limit = Math.min(300, Number(ctx.query.get('limit') || 100));
+  sendJson(res, 200, { logs: all('SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?', limit) });
+});
+
+/**
+ * 취소 시 환불 유형 자동 판정.
+ * 서비스 예정일 기준으로 24시간 이상 남았으면 전액 환불, 당일이거나 지났으면 50% 부과.
+ */
+function judgeRefund(order) {
+  if (!order.service_date) {
+    return { type: '전액환불', reason: '서비스 예정일 미지정 — 담당자 판단' };
+  }
+  const service = new Date(`${order.service_date}T00:00:00`);
+  const hoursLeft = (service.getTime() - Date.now()) / (1000 * 60 * 60);
+  if (hoursLeft >= 24) return { type: '전액환불', reason: `서비스 ${order.service_date} — 24시간 이상 남음` };
+  return { type: '당일취소', reason: `서비스 ${order.service_date} — 24시간 이내` };
+}
+
+function todayStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDays(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return todayStr(d);
+}
+function weekdayOf(dateStr) {
+  return ['일', '월', '화', '수', '목', '금', '토'][new Date(`${dateStr}T00:00:00`).getDay()];
+}
+
+// ---- 방문 일정 ----
+router.get('/api/admin/schedule', (req, res, ctx) => {
+  auth.requireAdmin(req);
+  const from = ctx.query.get('from') || todayStr();
+  const to = ctx.query.get('to') || addDays(from, 13);
+
+  const rows = all(
+    `SELECT o.id, o.order_no, o.service_date, o.service_time, o.status, o.type,
+            o.applicant_name, o.applicant_phone, o.address, o.note, o.total_amount
+     FROM orders o
+     WHERE o.service_date IS NOT NULL AND o.status != '취소'
+       AND date(o.service_date) BETWEEN date(?) AND date(?)
+     ORDER BY o.service_date, o.service_time, o.id`,
+    from, to
+  );
+
+  const byDate = new Map();
+  for (const r of rows) {
+    if (!byDate.has(r.service_date)) byDate.set(r.service_date, []);
+    byDate.get(r.service_date).push({
+      ...r,
+      items: all("SELECT name, qty, source FROM order_items WHERE order_id = ? AND source = 'care'", r.id),
+    });
+  }
+
+  sendJson(res, 200, {
+    from, to, today: todayStr(),
+    days: [...byDate.entries()].map(([date, orders]) => ({
+      date, weekday: weekdayOf(date), orders,
+      total: orders.reduce((a, b) => a + b.total_amount, 0),
+    })),
+    unscheduled: all(
+      `SELECT order_no, applicant_name, applicant_phone, created_at, status, id
+       FROM orders WHERE service_date IS NULL AND type != '장보기'
+         AND status IN ('접수','결제대기','결제완료','처리중')
+       ORDER BY id DESC LIMIT 50`),
+  });
+});
+
+/** 담당자가 방문 일정을 잡거나 옮긴다 */
+router.patch('/api/admin/orders/:id/schedule', async (req, res, ctx) => {
+  const actor = auth.requireAdmin(req);
+  const b = await readJson(req);
+  const order = get('SELECT * FROM orders WHERE id = ?', Number(ctx.params.id));
+  if (!order) throw new HttpError(404, '주문을 찾을 수 없습니다.');
+
+  const nextDate = b.serviceDate === '' || b.serviceDate == null ? null : normalizeServiceDate(b.serviceDate);
+  const nextTime = String(b.serviceTime || '').trim().slice(0, 30) || null;
+
+  run("UPDATE orders SET service_date = ?, service_time = ?, updated_at = datetime('now','localtime') WHERE id = ?",
+    nextDate, nextTime, order.id);
+  run('INSERT INTO order_logs(order_id, from_status, to_status, memo, actor) VALUES(?,?,?,?,?)',
+    order.id, order.status, order.status,
+    `방문 일정 ${order.service_date || '미정'} → ${nextDate || '미정'}${nextTime ? ` ${nextTime}` : ''}`, actor.name);
+  auth.audit(req, actor, '방문 일정 변경', order.order_no, `${order.service_date || '미정'} → ${nextDate || '미정'}`);
+  sendJson(res, 200, { ok: true, serviceDate: nextDate, serviceTime: nextTime });
 });
 
 // ---- 접수 현황판 ----
@@ -75,11 +245,12 @@ router.get('/api/admin/orders/:id', (req, res, ctx) => {
     payment: get('SELECT * FROM payment_requests WHERE order_id = ? ORDER BY id DESC', order.id),
     logs: all('SELECT * FROM order_logs WHERE order_id = ? ORDER BY id', order.id),
     balance: order.member_id ? balance.summary(order.member_id, order.ym) : null,
+    refundJudgement: judgeRefund(order),
   });
 });
 
 router.patch('/api/admin/orders/:id/status', async (req, res, ctx) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireAdmin(req);
   const body = await readJson(req);
   const status = String(body.status || '');
   if (!STATUSES.includes(status)) throw new HttpError(400, `상태값이 올바르지 않습니다. (${STATUSES.join(', ')})`);
@@ -89,8 +260,12 @@ router.patch('/api/admin/orders/:id/status', async (req, res, ctx) => {
   if (order.status === status) return sendJson(res, 200, { ok: true, unchanged: true });
 
   // 취소 위약금: 운영 기준상 서비스 24시간 전 취소는 전액 환불, 당일 취소는 50% 부과.
-  // 서비스 예정일은 현장에서 정해지므로 취소 처리 시 담당자가 유형을 고른다.
-  const refundType = status === '취소' ? (body.refundType === '당일취소' ? '당일취소' : '전액환불') : null;
+  // 서비스 예정일이 있으면 시스템이 자동 판정하고, 없으면 담당자가 고른다.
+  // 담당자가 명시적으로 유형을 지정하면(현장 사정 등) 그 값이 우선한다.
+  const judged = judgeRefund(order);
+  const refundType = status === '취소'
+    ? (body.refundType === '당일취소' || body.refundType === '전액환불' ? body.refundType : judged.type)
+    : null;
   const cancelFee = refundType === '당일취소' ? Math.round(order.total_amount * 0.5) : 0;
 
   tx(() => {
@@ -105,19 +280,22 @@ router.patch('/api/admin/orders/:id/status', async (req, res, ctx) => {
     }
     run("UPDATE orders SET status = ?, cancel_fee = ?, refund_type = ?, updated_at = datetime('now','localtime') WHERE id = ?",
       status, status === '취소' ? cancelFee : 0, refundType, order.id);
+    const judgeNote = status === '취소' && judged.reason ? `[${judged.reason}]` : '';
     const memo = status === '취소'
-      ? [refundType === '당일취소'
+      ? [judgeNote, refundType === '당일취소'
           ? `당일 취소 — 위약금 ${cancelFee.toLocaleString('ko-KR')}원(50%) 부과, ${(order.total_amount - cancelFee).toLocaleString('ko-KR')}원 환불`
           : '24시간 전 취소 — 전액 환불', body.memo].filter(Boolean).join(' / ')
       : body.memo || null;
-    run('INSERT INTO order_logs(order_id, from_status, to_status, memo) VALUES(?,?,?,?)',
-      order.id, order.status, status, memo);
+    run('INSERT INTO order_logs(order_id, from_status, to_status, memo, actor) VALUES(?,?,?,?,?)',
+      order.id, order.status, status, memo, actor.name);
 
     if (status === '결제완료') {
       run("UPDATE payment_requests SET status = '완료', approved_at = datetime('now','localtime') WHERE order_id = ?", order.id);
     }
   });
 
+  auth.audit(req, actor, '주문 상태 변경', order.order_no,
+    `${order.status} → ${status}${cancelFee ? ` / 위약금 ${cancelFee}원` : ''}`);
   sendJson(res, 200, { ok: true, status, refundType, cancelFee });
 });
 
@@ -147,7 +325,7 @@ router.post('/api/admin/parse', async (req, res) => {
 });
 
 router.post('/api/admin/orders', async (req, res) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireAdmin(req);
   const body = await readJson(req);
   const name = String(body.name || '').trim();
   const phone = normalizePhone(body.phone);
@@ -192,7 +370,8 @@ router.post('/api/admin/orders', async (req, res) => {
         line.unitPrice, line.costPrice, line.point_earn, line.qty, line.subtotal);
     }
     run('INSERT INTO payment_requests(order_id, amount, status, method) VALUES(?,?,?,?)', orderId, total, '요청', '지역화폐카드');
-    run('INSERT INTO order_logs(order_id, from_status, to_status, memo) VALUES(?,?,?,?)', orderId, null, '접수', `관리자 접수(${body.channel || '카카오톡'})`);
+    run('INSERT INTO order_logs(order_id, from_status, to_status, memo, actor) VALUES(?,?,?,?,?)',
+      orderId, null, '접수', `관리자 접수(${body.channel || '카카오톡'})`, actor.name);
     balance.applyUsage(member.id, targetYm, total);
     if (pointEarn > 0) balance.addPoints(member.id, pointEarn);
     return { orderNo, memberId: member.id, targetYm };
@@ -217,7 +396,7 @@ router.get('/api/admin/members', (req, res, ctx) => {
 });
 
 router.post('/api/admin/members', async (req, res) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireAdmin(req);
   const b = await readJson(req);
   if (!b.name || !b.phone) throw new HttpError(400, '이름과 연락처는 필수입니다.');
   const phone = normalizePhone(b.phone);
@@ -234,7 +413,7 @@ router.post('/api/admin/members', async (req, res) => {
 });
 
 router.put('/api/admin/members/:id', async (req, res, ctx) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireAdmin(req);
   const b = await readJson(req);
   const id = Number(ctx.params.id);
   const m = get('SELECT * FROM members WHERE id = ?', id);
@@ -253,16 +432,22 @@ router.put('/api/admin/members/:id', async (req, res, ctx) => {
     balance.ensureBalance(id, targetYm);
     run('UPDATE monthly_balances SET limit_amount = ? WHERE member_id = ? AND ym = ?', Number(b.monthlyLimit), id, targetYm);
   }
+  auth.audit(req, actor, '회원 정보 수정', `${m.name}(${m.phone})`,
+    b.monthlyLimit !== undefined && Number(b.monthlyLimit) !== m.monthly_limit
+      ? `월 한도 ${m.monthly_limit} → ${b.monthlyLimit}` : null);
   sendJson(res, 200, { ok: true });
 });
 
 router.delete('/api/admin/members/:id', (req, res, ctx) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireOwner(req);
   const id = Number(ctx.params.id);
+  const member = get('SELECT * FROM members WHERE id = ?', id);
   if (get('SELECT COUNT(*) AS c FROM orders WHERE member_id = ?', id).c > 0) {
     run('UPDATE members SET active = 0 WHERE id = ?', id);
+    auth.audit(req, actor, '회원 비활성', member ? `${member.name}(${member.phone})` : String(id), '주문 이력 있음');
     return sendJson(res, 200, { ok: true, softDeleted: true, message: '주문 이력이 있어 비활성 처리했습니다.' });
   }
+  auth.audit(req, actor, '회원 삭제', member ? `${member.name}(${member.phone})` : String(id), null);
   run('DELETE FROM members WHERE id = ?', id);
   sendJson(res, 200, { ok: true });
 });
@@ -274,7 +459,7 @@ router.get('/api/admin/price-items', (req, res) => {
 });
 
 router.post('/api/admin/price-items', async (req, res) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireOwner(req);
   const b = await readJson(req);
   if (!b.name) throw new HttpError(400, '품목명을 입력해 주세요.');
   const cost = Number(b.costPrice || 0);
@@ -289,7 +474,7 @@ router.post('/api/admin/price-items', async (req, res) => {
 });
 
 router.put('/api/admin/price-items/:id', async (req, res, ctx) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireOwner(req);
   const b = await readJson(req);
   const item = get('SELECT * FROM price_items WHERE id = ?', Number(ctx.params.id));
   if (!item) throw new HttpError(404, '품목을 찾을 수 없습니다.');
@@ -307,7 +492,7 @@ router.put('/api/admin/price-items/:id', async (req, res, ctx) => {
 });
 
 router.delete('/api/admin/price-items/:id', (req, res, ctx) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireOwner(req);
   run('UPDATE price_items SET active = 0 WHERE id = ?', Number(ctx.params.id));
   sendJson(res, 200, { ok: true });
 });
@@ -319,7 +504,7 @@ router.get('/api/admin/menu-items', (req, res) => {
 });
 
 router.put('/api/admin/menu-items/:id', async (req, res, ctx) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireOwner(req);
   const b = await readJson(req);
   const item = get('SELECT * FROM menu_items WHERE id = ?', Number(ctx.params.id));
   if (!item) throw new HttpError(404, '메뉴 항목을 찾을 수 없습니다.');
@@ -334,7 +519,7 @@ router.put('/api/admin/menu-items/:id', async (req, res, ctx) => {
 });
 
 router.post('/api/admin/menu-items', async (req, res) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireOwner(req);
   const b = await readJson(req);
   if (!b.name || !b.category) throw new HttpError(400, '분류와 서비스명을 입력해 주세요.');
   const ins = run(
@@ -498,7 +683,7 @@ router.get('/api/admin/settings', (req, res) => {
 });
 
 router.put('/api/admin/settings', async (req, res) => {
-  auth.requireAdmin(req);
+  const actor = auth.requireOwner(req);
   const b = await readJson(req);
   const map = {
     defaultMonthlyLimit: 'default_monthly_limit',
@@ -512,6 +697,7 @@ router.put('/api/admin/settings', async (req, res) => {
     if (b[field] !== undefined) setSetting(key, b[field]);
   }
   if (b.carryoverEnabled !== undefined) setSetting('carryover_enabled', b.carryoverEnabled ? '1' : '0');
+  auth.audit(req, actor, '운영 설정 변경', null, Object.keys(b).join(', '));
   sendJson(res, 200, { ok: true });
 });
 

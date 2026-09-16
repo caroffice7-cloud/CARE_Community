@@ -15,12 +15,14 @@ const { sendJson, sendText, HttpError } = require('./src/lib/http');
 const publicRoutes = require('./src/routes/public');
 const adminRoutes = require('./src/routes/admin');
 const { seed } = require('./src/seed');
+const auth = require('./src/lib/auth');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-seed(); // 최초 실행 시 메뉴판·가격표 자동 적재 (이미 있으면 건너뜀)
+seed();        // 최초 실행 시 메뉴판·가격표 자동 적재 (이미 있으면 건너뜀)
+auth.bootstrap(); // 운영자 계정 준비
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -103,7 +105,7 @@ server.listen(PORT, HOST, () => {
   console.log(' 보성군 지역화폐 기반 통합돌봄 주문관리 시스템');
   console.log(` 고객 화면   : http://localhost:${PORT}/`);
   console.log(` 관리자 화면 : http://localhost:${PORT}/admin`);
-  console.log(` 관리자 비밀번호: ${process.env.ADMIN_PASSWORD ? '(환경변수 ADMIN_PASSWORD 적용됨)' : 'boseong2026 (기본값 — 운영 전 반드시 변경)'}`);
+  console.log(` 운영자 로그인  : 아이디 admin / 비밀번호 ${process.env.ADMIN_PASSWORD ? '(환경변수 ADMIN_PASSWORD)' : 'boseong2026 (기본값 — 첫 로그인 후 변경)'}`);
   console.log('────────────────────────────────────────────────');
 });
 

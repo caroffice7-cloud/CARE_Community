@@ -6,7 +6,7 @@ const won = (n) => `${Number(n || 0).toLocaleString('ko-KR')}원`;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const state = { view: 'dashboard', intake: { items: [], member: null }, catalog: null };
+const state = { view: 'dashboard', intake: { items: [], member: null }, catalog: null, me: null };
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -25,11 +25,52 @@ function showApp() { $('loginView').classList.add('hidden'); $('appView').classL
 
 async function doLogin() {
   try {
-    await api('/api/admin/login', { method: 'POST', body: { password: $('pw').value } });
+    await api('/api/admin/login', { method: 'POST', body: { loginId: $('loginId').value.trim(), password: $('pw').value } });
     showApp();
     await boot();
   } catch (err) {
     $('loginMsg').innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+  }
+}
+
+/** 권한에 따라 메뉴를 감추고, 로그인한 사람을 표시한다 */
+function applyRole() {
+  const me = state.me;
+  $('whoami').textContent = me ? `${me.name} · ${me.role}` : '';
+  const isOwner = me && me.role === '총괄';
+  document.querySelectorAll('.admin-nav button[data-owner]').forEach((b) => {
+    b.classList.toggle('hidden', !isOwner);
+  });
+  if (me && me.mustChange) {
+    setTimeout(() => {
+      alert('첫 로그인입니다. 비밀번호를 바꿔 주세요.');
+      openPasswordDialog();
+    }, 300);
+  }
+}
+
+function openPasswordDialog() {
+  $('dlgTitle').textContent = '비밀번호 변경';
+  $('dlgBody').innerHTML = `
+    <div class="row-form">
+      <div><label class="mini">현재 비밀번호</label><input id="pwCur" type="password"></div>
+      <div><label class="mini">새 비밀번호 (8자 이상)</label><input id="pwNew" type="password"></div>
+    </div>
+    <div id="pwMsg"></div>`;
+  $('dlgFoot').innerHTML = `
+    <button class="btn btn-sm btn-ghost" onclick="detailDlg.close()">닫기</button>
+    <button class="btn btn-sm btn-primary" onclick="changeMyPassword()">변경</button>`;
+  detailDlg.showModal();
+}
+
+async function changeMyPassword() {
+  try {
+    await api('/api/admin/password', { method: 'POST', body: { current: $('pwCur').value, next: $('pwNew').value } });
+    state.me.mustChange = false;
+    detailDlg.close();
+    alert('비밀번호를 바꿨습니다.');
+  } catch (err) {
+    $('pwMsg').innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
   }
 }
 
@@ -39,6 +80,9 @@ async function doLogout() {
 }
 
 async function boot() {
+  const me = await api('/api/admin/me');
+  state.me = me.user || null;
+  applyRole();
   state.catalog = await api('/api/catalog');
   document.querySelectorAll('.admin-nav button').forEach((b) => {
     b.onclick = () => switchView(b.dataset.view);
@@ -50,8 +94,9 @@ function switchView(view) {
   state.view = view;
   document.querySelectorAll('.admin-nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   document.querySelectorAll('.admin-wrap > section').forEach((s) => s.classList.toggle('hidden', s.id !== `view-${view}`));
-  ({ dashboard: renderDashboard, orders: renderOrders, intake: renderIntake, members: renderMembers,
-     prices: renderPrices, menus: renderMenus, settlement: renderSettlement, settings: renderSettings }[view])();
+  ({ dashboard: renderDashboard, orders: renderOrders, schedule: renderSchedule, intake: renderIntake,
+     members: renderMembers, prices: renderPrices, menus: renderMenus, settlement: renderSettlement,
+     settings: renderSettings, accounts: renderAccounts }[view])();
 }
 
 /* ── 잔액 대시보드 ── */
@@ -129,13 +174,16 @@ async function renderOrders() {
     <div class="table-scroll">
       <table>
         <thead><tr>
-          <th>접수번호</th><th>접수일시</th><th>회원</th><th>연락처</th><th>유형</th>
+          <th>접수번호</th><th>접수일시</th><th>예정일</th><th>회원</th><th>연락처</th><th>유형</th>
           <th class="num">돌봄</th><th class="num">장보기</th><th class="num">합계</th><th>상태</th><th>경로</th><th></th>
         </tr></thead>
         <tbody>
           ${d.orders.map((o) => `<tr>
             <td><b>${esc(o.order_no)}</b></td>
             <td class="mini">${esc(o.created_at)}</td>
+            <td class="mini">${o.service_date
+              ? `${esc(o.service_date)}${o.service_time ? `<br>${esc(o.service_time)}` : ''}`
+              : (o.type === '장보기' ? '<span class="muted">-</span>' : '<span style="color:var(--amber-600)">미정</span>')}</td>
             <td>${esc(o.applicant_name)}</td>
             <td class="mini">${esc(o.applicant_phone)}</td>
             <td>${esc(o.type)}</td>
@@ -149,7 +197,7 @@ async function renderOrders() {
             </td>
             <td class="mini">${esc(o.channel)}</td>
             <td><button class="btn btn-sm btn-outline" onclick="openOrder(${o.id})">상세</button></td>
-          </tr>`).join('') || '<tr><td colspan="11" class="muted">접수 내역이 없습니다.</td></tr>'}
+          </tr>`).join('') || '<tr><td colspan="12" class="muted">접수 내역이 없습니다.</td></tr>'}
         </tbody>
       </table>
     </div>`;
@@ -161,21 +209,61 @@ function applyOrderFilter() {
 }
 
 async function changeStatus(id, status) {
-  const body = { status };
-  if (status === '취소') {
-    // 운영 기준: 서비스 24시간 전 취소는 전액 환불, 당일 취소는 50% 부과
-    const sameDay = confirm(
-      '취소 처리 방식을 선택하세요.\n\n' +
-      '[확인] 당일 취소 — 이용료의 50%를 위약금으로 부과하고 나머지만 잔액으로 돌려줍니다.\n' +
-      '[취소] 24시간 전 취소 — 전액 환불(잔액 전부 복원)합니다.'
-    );
-    body.refundType = sameDay ? '당일취소' : '전액환불';
-  }
+  if (status === '취소') return openCancelDialog(id);
   try {
-    const d = await api(`/api/admin/orders/${id}/status`, { method: 'PATCH', body });
-    if (d.cancelFee) alert(`위약금 ${won(d.cancelFee)}을 부과하고 나머지를 환불 처리했습니다.`);
-    renderOrders();
-  } catch (err) { alert(err.message); renderOrders(); }
+    await api(`/api/admin/orders/${id}/status`, { method: 'PATCH', body: { status } });
+    refreshCurrentList();
+  } catch (err) { alert(err.message); refreshCurrentList(); }
+}
+
+function refreshCurrentList() {
+  if (state.view === 'schedule') renderSchedule(); else renderOrders();
+}
+
+/** 취소 처리 — 서비스 예정일로 자동 판정한 결과를 보여주고, 필요하면 담당자가 바꾼다 */
+async function openCancelDialog(id) {
+  const d = await api(`/api/admin/orders/${id}`);
+  const j = d.refundJudgement;
+  const fee = Math.round(d.order.total_amount * 0.5);
+
+  $('dlgTitle').textContent = `주문 취소 — ${d.order.order_no} (${d.order.applicant_name})`;
+  $('dlgBody').innerHTML = `
+    <div class="alert ${j.type === '당일취소' ? 'alert-warn' : 'alert-ok'}">
+      <b>자동 판정: ${esc(j.type === '당일취소' ? '당일 취소 (위약금 50%)' : '24시간 전 취소 (전액 환불)')}</b>
+      <br><span class="mini">${esc(j.reason)}</span>
+    </div>
+    <p class="mini">신청 금액 ${won(d.order.total_amount)} · 서비스 예정일 ${esc(d.order.service_date) || '미지정'}</p>
+    <div class="row-form" style="grid-template-columns:1fr">
+      <label class="consent" style="cursor:pointer">
+        <input type="radio" name="rf" value="전액환불" ${j.type === '전액환불' ? 'checked' : ''}>
+        <span><b>전액 환불</b> — ${won(d.order.total_amount)} 전부 잔액으로 되돌립니다 (서비스 24시간 전 취소)</span>
+      </label>
+      <label class="consent" style="cursor:pointer">
+        <input type="radio" name="rf" value="당일취소" ${j.type === '당일취소' ? 'checked' : ''}>
+        <span><b>당일 취소</b> — 위약금 ${won(fee)} 부과, ${won(d.order.total_amount - fee)} 환불</span>
+      </label>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="mini">취소 사유 (선택)</label>
+      <input id="cancelMemo" placeholder="어르신 요청, 기상 악화 등"></div>
+    <div id="cancelMsg"></div>`;
+  $('dlgFoot').innerHTML = `
+    <button class="btn btn-sm btn-ghost" onclick="detailDlg.close(); refreshCurrentList();">닫기</button>
+    <button class="btn btn-sm btn-danger" onclick="submitCancel(${id})">취소 처리</button>`;
+  detailDlg.showModal();
+}
+
+async function submitCancel(id) {
+  const picked = document.querySelector('input[name="rf"]:checked');
+  try {
+    const d = await api(`/api/admin/orders/${id}/status`, { method: 'PATCH', body: {
+      status: '취소', refundType: picked ? picked.value : undefined, memo: $('cancelMemo').value.trim(),
+    } });
+    detailDlg.close();
+    alert(d.cancelFee ? `위약금 ${won(d.cancelFee)}을 부과하고 나머지를 환불 처리했습니다.` : '전액 환불 처리했습니다.');
+    refreshCurrentList();
+  } catch (err) {
+    $('cancelMsg').innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+  }
 }
 
 async function openOrder(id) {
@@ -188,6 +276,8 @@ async function openOrder(id) {
       <div><b>비상연락처</b><br>${esc(d.order.emergency_phone) || '-'}</div>
       <div><b>대리 신청</b><br>${d.order.proxy_name ? `${esc(d.order.proxy_name)} (${esc(d.order.proxy_relation) || '-'}, ${esc(d.order.proxy_phone) || '-'})` : '-'}</div>
     </div>
+    <p><b>서비스 예정일</b> ${esc(d.order.service_date) || '미지정'} ${esc(d.order.service_time) || ''}
+      <button class="btn btn-sm btn-outline" onclick="detailDlg.close(); openSchedule(${d.order.id});">일정 변경</button></p>
     <p><b>주소</b> ${esc(d.order.address) || '-'}</p>
     <p><b>요청사항</b> ${esc(d.order.note) || '-'}</p>
     ${d.balance ? `<p class="mini">${d.order.ym} 한도 ${won(d.balance.limit + d.balance.carryover)} · 사용 ${won(d.balance.used)} · 잔액 ${won(d.balance.available)}</p>` : ''}
@@ -211,10 +301,187 @@ async function openOrder(id) {
 
     <h4 style="margin-top:16px">처리 이력</h4>
     <table><tbody>
-      ${d.logs.map((l) => `<tr><td class="mini">${esc(l.created_at)}</td><td>${esc(l.from_status) || '-'} → <b>${esc(l.to_status)}</b></td><td class="mini">${esc(l.memo) || ''}</td></tr>`).join('')}
+      ${d.logs.map((l) => `<tr><td class="mini">${esc(l.created_at)}</td>
+        <td>${esc(l.from_status) || '-'} → <b>${esc(l.to_status)}</b></td>
+        <td class="mini">${esc(l.actor) || '<span class="muted">-</span>'}</td>
+        <td class="mini">${esc(l.memo) || ''}</td></tr>`).join('')}
     </tbody></table>`;
   $('dlgFoot').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="detailDlg.close()">닫기</button>`;
   detailDlg.showModal();
+}
+
+/* ── 방문 일정 ── */
+async function renderSchedule(from, to) {
+  const q = from && to ? `?from=${from}&to=${to}` : '';
+  const d = await api(`/api/admin/schedule${q}`);
+
+  $('view-schedule').innerHTML = `
+    <div class="toolbar">
+      <input id="schFrom" type="date" value="${d.from}"> ~ <input id="schTo" type="date" value="${d.to}">
+      <button class="btn btn-sm btn-primary" onclick="renderSchedule($('schFrom').value, $('schTo').value)">조회</button>
+      <button class="btn btn-sm btn-ghost" onclick="renderSchedule()">이번 2주</button>
+      <span class="mini">방문·배달 예정 ${d.days.reduce((a, x) => a + x.orders.length, 0)}건</span>
+    </div>
+
+    ${d.unscheduled.length ? `<div class="alert alert-warn">
+      방문일이 정해지지 않은 신청이 ${d.unscheduled.length}건 있습니다.
+      <table style="margin-top:8px"><thead><tr><th>접수번호</th><th>신청자</th><th>접수일</th><th>상태</th><th></th></tr></thead>
+        <tbody>${d.unscheduled.map((o) => `<tr>
+          <td class="mini">${esc(o.order_no)}</td><td>${esc(o.applicant_name)}</td>
+          <td class="mini">${esc(o.created_at)}</td><td><span class="badge b-${esc(o.status)}">${esc(o.status)}</span></td>
+          <td><button class="btn btn-sm btn-primary" onclick="openSchedule(${o.id})">일정 잡기</button></td>
+        </tr>`).join('')}</tbody></table>
+    </div>` : ''}
+
+    ${d.days.length ? d.days.map((day) => `
+      <div class="panel" style="${day.date === d.today ? 'border-color:var(--green-600);border-width:2px' : ''}">
+        <h3>${esc(day.date)} (${esc(day.weekday)}) ${day.date === d.today ? '<span class="badge b-접수">오늘</span>' : ''}
+          <span class="mini">— ${day.orders.length}건 · ${won(day.total)}</span></h3>
+        <table><thead><tr><th>시간대</th><th>어르신</th><th>연락처</th><th>주소</th><th>서비스</th><th>상태</th><th></th></tr></thead>
+          <tbody>${day.orders.map((o) => `<tr>
+            <td>${esc(o.service_time) || '<span class="mini muted">상관없음</span>'}</td>
+            <td><b>${esc(o.applicant_name)}</b></td>
+            <td class="mini">${esc(o.applicant_phone)}</td>
+            <td class="mini">${esc(o.address) || '-'}</td>
+            <td class="mini">${o.items.map((i) => `${esc(i.name)}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join(', ') || '-'}
+              ${o.note ? `<br><span class="mini" style="color:var(--amber-600)">요청: ${esc(o.note)}</span>` : ''}</td>
+            <td><span class="badge b-${esc(o.status)}">${esc(o.status)}</span></td>
+            <td>
+              <button class="btn btn-sm btn-outline" onclick="openSchedule(${o.id})">일정 변경</button>
+              <button class="btn btn-sm btn-ghost" onclick="openOrder(${o.id})">상세</button>
+            </td></tr>`).join('')}</tbody></table>
+      </div>`).join('')
+      : '<div class="panel"><p class="muted">해당 기간에 예정된 방문이 없습니다.</p></div>'}`;
+}
+
+async function openSchedule(orderId) {
+  const d = await api(`/api/admin/orders/${orderId}`);
+  $('dlgTitle').textContent = `방문 일정 — ${d.order.order_no} (${d.order.applicant_name})`;
+  $('dlgBody').innerHTML = `
+    <div class="row-form">
+      <div><label class="mini">서비스 예정일</label>
+        <input id="schDate" type="date" value="${esc(d.order.service_date)}"></div>
+      <div><label class="mini">희망 시간대</label>
+        <select id="schTime">
+          ${['', '오전 (9시~12시)', '점심 (12시~2시)', '오후 (2시~5시)', '저녁 (5시~7시)'].map((t) =>
+            `<option value="${esc(t)}" ${(d.order.service_time || '') === t ? 'selected' : ''}>${t || '상관없음'}</option>`).join('')}
+        </select></div>
+    </div>
+    <p class="mini" style="margin-top:8px">
+      ${d.order.address ? `주소: ${esc(d.order.address)}<br>` : ''}
+      ${d.order.note ? `요청사항: ${esc(d.order.note)}<br>` : ''}
+      신청 항목: ${d.items.filter((i) => i.source === 'care').map((i) => esc(i.name)).join(', ') || '-'}
+    </p>
+    <div class="alert ${d.refundJudgement.type === '당일취소' ? 'alert-warn' : 'alert-ok'}" style="font-size:.88rem">
+      지금 취소하면 <b>${esc(d.refundJudgement.type === '당일취소' ? '위약금 50% 부과' : '전액 환불')}</b>
+      — ${esc(d.refundJudgement.reason)}
+    </div>
+    <div id="schMsg"></div>`;
+  $('dlgFoot').innerHTML = `
+    <button class="btn btn-sm btn-ghost" onclick="detailDlg.close()">취소</button>
+    <button class="btn btn-sm btn-primary" onclick="saveSchedule(${orderId})">저장</button>`;
+  detailDlg.showModal();
+}
+
+async function saveSchedule(orderId) {
+  try {
+    await api(`/api/admin/orders/${orderId}/schedule`, { method: 'PATCH',
+      body: { serviceDate: $('schDate').value, serviceTime: $('schTime').value } });
+    detailDlg.close();
+    if (state.view === 'schedule') renderSchedule(); else renderOrders();
+  } catch (err) {
+    $('schMsg').innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+  }
+}
+
+/* ── 운영자 계정 (총괄만) ── */
+async function renderAccounts() {
+  const d = await api('/api/admin/accounts');
+  const audit = await api('/api/admin/audit?limit=60');
+
+  $('view-accounts').innerHTML = `
+    <div class="panel">
+      <h3>운영자 계정</h3>
+      <p class="mini">
+        <b>총괄</b> — 모든 기능 + 계정 관리 + 설정·단가 변경 ·
+        <b>담당자</b> — 접수 처리, 회원 관리, 카톡 접수, 방문 일정, 정산 조회<br>
+        계정을 나누면 주문 상태 변경·회원 정보 수정이 누가 했는지 기록에 남습니다.
+      </p>
+      <div class="row-form" style="margin-top:12px">
+        <input id="acLoginId" placeholder="아이디 (영문소문자·숫자)">
+        <input id="acName" placeholder="담당자 이름">
+        <input id="acPhone" placeholder="연락처">
+        <select id="acRole">${d.roles.map((r) => `<option ${r === '담당자' ? 'selected' : ''}>${r}</option>`).join('')}</select>
+        <input id="acPw" placeholder="초기 비밀번호 (8자 이상)">
+        <button class="btn btn-sm btn-primary" onclick="createAccount()">계정 추가</button>
+      </div>
+      <div id="acMsg"></div>
+    </div>
+
+    <div class="table-scroll"><table>
+      <thead><tr><th>아이디</th><th>이름</th><th>역할</th><th>연락처</th><th>마지막 로그인</th><th>상태</th><th></th></tr></thead>
+      <tbody>${d.accounts.map((a) => `<tr data-id="${a.id}">
+        <td><b>${esc(a.login_id)}</b></td>
+        <td><input class="inline-edit" value="${esc(a.name)}" data-f="name"></td>
+        <td><select class="inline-edit" data-f="role">
+          ${d.roles.map((r) => `<option ${a.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+        <td><input class="inline-edit" value="${esc(a.phone)}" data-f="phone"></td>
+        <td class="mini">${esc(a.last_login_at) || '없음'}${a.must_change ? '<br><span style="color:var(--amber-600)">비밀번호 변경 필요</span>' : ''}</td>
+        <td>${a.active ? '사용중' : '<span class="muted">중지</span>'}</td>
+        <td>
+          <button class="btn btn-sm btn-primary" onclick="saveAccount(${a.id})">저장</button>
+          <button class="btn btn-sm btn-ghost" onclick="resetAccountPw(${a.id}, '${esc(a.login_id)}')">비밀번호 재발급</button>
+          <button class="btn btn-sm ${a.active ? 'btn-danger' : 'btn-outline'}" onclick="toggleAccount(${a.id}, ${a.active ? 0 : 1})">
+            ${a.active ? '사용 중지' : '사용 재개'}</button>
+        </td></tr>`).join('')}</tbody>
+    </table></div>
+
+    <div class="panel">
+      <h3>변경 기록</h3>
+      <p class="mini">개인정보 접근·변경 이력입니다. 운영 점검 시 근거 자료로 쓰십시오.</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>일시</th><th>담당자</th><th>작업</th><th>대상</th><th>내용</th><th>접속 IP</th></tr></thead>
+        <tbody>${audit.logs.map((l) => `<tr>
+          <td class="mini">${esc(l.created_at)}</td><td>${esc(l.actor_name) || '-'}</td>
+          <td>${esc(l.action)}</td><td class="mini">${esc(l.target) || '-'}</td>
+          <td class="mini">${esc(l.detail) || ''}</td><td class="mini">${esc(l.ip) || ''}</td>
+        </tr>`).join('') || '<tr><td colspan="6" class="muted">기록이 없습니다.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+async function createAccount() {
+  try {
+    await api('/api/admin/accounts', { method: 'POST', body: {
+      loginId: $('acLoginId').value.trim(), name: $('acName').value.trim(),
+      phone: $('acPhone').value.trim(), role: $('acRole').value, password: $('acPw').value.trim(),
+    } });
+    alert(`계정을 만들었습니다.\n아이디: ${$('acLoginId').value.trim()}\n초기 비밀번호를 담당자에게 안전하게 전달하세요.`);
+    renderAccounts();
+  } catch (err) {
+    $('acMsg').innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+  }
+}
+
+async function saveAccount(id) {
+  try { await api(`/api/admin/accounts/${id}`, { method: 'PUT', body: rowValues(id) }); renderAccounts(); }
+  catch (err) { alert(err.message); }
+}
+
+async function toggleAccount(id, active) {
+  if (!active && !confirm('이 계정의 사용을 중지하면 즉시 로그아웃됩니다. 계속할까요?')) return;
+  try { await api(`/api/admin/accounts/${id}`, { method: 'PUT', body: { active: !!active } }); renderAccounts(); }
+  catch (err) { alert(err.message); }
+}
+
+async function resetAccountPw(id, loginId) {
+  const pw = prompt(`${loginId} 계정의 새 비밀번호를 입력하세요 (8자 이상)`);
+  if (!pw) return;
+  try {
+    await api(`/api/admin/accounts/${id}`, { method: 'PUT', body: { password: pw } });
+    alert('비밀번호를 재발급했습니다. 해당 담당자는 다시 로그인해야 합니다.');
+    renderAccounts();
+  } catch (err) { alert(err.message); }
 }
 
 /* ── 카톡 접수 ── */

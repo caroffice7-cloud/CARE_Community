@@ -15,12 +15,19 @@
     <h2>운영자 로그인</h2>
     <p class="muted">보성군 통합돌봄 주문관리 시스템</p>
     <div class="field">
-      <label for="pw">관리자 비밀번호</label>
+      <label for="loginId">아이디</label>
+      <input id="loginId" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="field">
+      <label for="pw">비밀번호</label>
       <input id="pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-primary btn-block" onclick="doLogin()">로그인</button>
     <div id="loginMsg"></div>
-    <p class="mini" style="margin-top:14px">최초 비밀번호는 환경변수 <code>ADMIN_PASSWORD</code> 로 지정합니다. (기본값 boseong2026)</p>
+    <p class="mini" style="margin-top:14px">
+      담당자마다 아이디를 따로 발급받습니다. 아이디가 없으면 총괄 관리자에게 요청하세요.<br>
+      최초 계정은 <code>admin</code> 이며 비밀번호는 환경변수 <code>ADMIN_PASSWORD</code> 값입니다.
+    </p>
   </div>
 </div>
 
@@ -30,29 +37,35 @@
     <div class="title">보성군 통합돌봄 주문관리 · 운영자</div>
     <div>
       <span class="mini" id="ymLabel"></span>
+      <span class="badge" id="whoami" style="background:var(--green-600);color:#fff"></span>
+      <button class="btn btn-sm btn-ghost" onclick="openPasswordDialog()">비밀번호 변경</button>
       <button class="btn btn-sm btn-ghost" onclick="doLogout()">로그아웃</button>
     </div>
   </div>
   <nav class="admin-nav">
     <button data-view="dashboard" class="active">잔액 대시보드</button>
     <button data-view="orders">접수 현황</button>
+    <button data-view="schedule">방문 일정</button>
     <button data-view="intake">카톡 접수</button>
     <button data-view="members">회원 관리</button>
-    <button data-view="prices">가격표 관리</button>
-    <button data-view="menus">돌봄 메뉴 단가</button>
+    <button data-view="prices" data-owner="1">가격표 관리</button>
+    <button data-view="menus" data-owner="1">돌봄 메뉴 단가</button>
     <button data-view="settlement">정산</button>
-    <button data-view="settings">설정</button>
+    <button data-view="settings" data-owner="1">설정</button>
+    <button data-view="accounts" data-owner="1">운영자 계정</button>
   </nav>
 
   <div class="admin-wrap">
     <section id="view-dashboard"></section>
     <section id="view-orders" class="hidden"></section>
+    <section id="view-schedule" class="hidden"></section>
     <section id="view-intake" class="hidden"></section>
     <section id="view-members" class="hidden"></section>
     <section id="view-prices" class="hidden"></section>
     <section id="view-menus" class="hidden"></section>
     <section id="view-settlement" class="hidden"></section>
     <section id="view-settings" class="hidden"></section>
+    <section id="view-accounts" class="hidden"></section>
   </div>
 </div>
 

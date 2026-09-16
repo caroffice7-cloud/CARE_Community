@@ -329,7 +329,27 @@ function renderCart() {
 
   $('cartSummary').innerHTML = parts.join('');
   $('ctaTotal').textContent = won(t.total);
+  toggleScheduleBox();
   renderBalance();
+}
+
+/** 방문·배달이 필요한 돌봄 항목이 담긴 경우에만 희망일을 받는다 */
+function needsSchedule() {
+  return [...state.cart.values()].some((l) => l.source === 'care' && l.category !== 'AI데이터참여');
+}
+
+function toggleScheduleBox() {
+  const box = $('scheduleBox');
+  if (!box) return;
+  const need = needsSchedule();
+  box.classList.toggle('hidden', !need);
+  const input = $('fServiceDate');
+  if (need && input && !input.value) {
+    const d = new Date();
+    d.setDate(d.getDate() + 2); // 기본값: 모레
+    input.min = new Date().toISOString().slice(0, 10);
+    input.value = d.toISOString().slice(0, 10);
+  }
 }
 
 function flash(targetId, message) {
@@ -379,9 +399,17 @@ async function submitOrder() {
       proxyPhone: $('fProxyOn').checked ? $('fProxyPhone').value.trim() : '',
     },
     items, consents,
+    serviceDate: needsSchedule() ? $('fServiceDate').value : '',
+    serviceTime: needsSchedule() ? $('fServiceTime').value : '',
     note: $('fNote').value.trim(),
     channel: '웹',
   };
+
+  if (needsSchedule() && !payload.serviceDate) {
+    box.innerHTML = '<div class="alert alert-warn">서비스 희망일을 정해 주세요.</div>';
+    $('scheduleBox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
 
   $('submitBtn').disabled = true;
   $('submitBtn').textContent = '제출 중…';
@@ -395,6 +423,8 @@ async function submitOrder() {
         <p>담당자가 확인 후 연락드립니다.</p>
         <p style="font-size:1.4rem;font-weight:800">접수번호 <span style="color:var(--green-700)">${esc(data.orderNo)}</span></p>
         <p class="muted">신청 금액 ${won(data.summary.total)} · ${esc(data.payment.note)}</p>
+        ${payload.serviceDate ? `<p><b>서비스 예정일 ${esc(payload.serviceDate)}${payload.serviceTime ? ` ${esc(payload.serviceTime)}` : ''}</b><br>
+          <span class="muted">예정일 24시간 전까지 취소하시면 전액 환불됩니다.</span></p>` : ''}
         <p class="muted">이번 달 남은 금액 ${won(data.balance.available)}</p>
       </div>`;
     box.scrollIntoView({ behavior: 'smooth', block: 'center' });

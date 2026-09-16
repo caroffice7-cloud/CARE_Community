@@ -108,6 +108,8 @@ CREATE TABLE IF NOT EXISTS orders (
   market_amount   INTEGER NOT NULL DEFAULT 0,
   total_amount    INTEGER NOT NULL DEFAULT 0,
   point_earn      INTEGER NOT NULL DEFAULT 0,
+  service_date    TEXT,
+  service_time    TEXT,
   cancel_fee      INTEGER NOT NULL DEFAULT 0,
   refund_type     TEXT,
   channel         TEXT NOT NULL DEFAULT '웹',
@@ -164,6 +166,7 @@ CREATE TABLE IF NOT EXISTS order_logs (
   from_status TEXT,
   to_status   TEXT,
   memo        TEXT,
+  actor       TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
@@ -186,6 +189,40 @@ ensureColumn('menu_items', 'cost_price', 'INTEGER NOT NULL DEFAULT 0');
 // 취소 위약금(당일 취소 50% 부과 규정) 기록
 ensureColumn('orders', 'cancel_fee', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('orders', 'refund_type', 'TEXT');
+// 서비스 희망일 — 취소 시 24시간 전/당일 자동 판정과 방문 일정 관리에 쓴다
+ensureColumn('orders', 'service_date', 'TEXT');
+ensureColumn('orders', 'service_time', 'TEXT');
+// 처리 이력에 담당자를 남긴다
+ensureColumn('order_logs', 'actor', 'TEXT');
+
+// 운영자 계정 · 감사 기록
+db.exec(`
+CREATE TABLE IF NOT EXISTS admin_users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  login_id      TEXT NOT NULL UNIQUE,
+  name          TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT '담당자',
+  phone         TEXT,
+  password_hash TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
+  active        INTEGER NOT NULL DEFAULT 1,
+  must_change   INTEGER NOT NULL DEFAULT 0,
+  last_login_at TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_id    INTEGER,
+  actor_name  TEXT,
+  action      TEXT NOT NULL,
+  target      TEXT,
+  detail      TEXT,
+  ip          TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+`);
 
 function get(sql, ...params) {
   return db.prepare(sql).get(...params);

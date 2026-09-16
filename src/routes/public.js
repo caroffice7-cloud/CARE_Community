@@ -103,6 +103,9 @@ router.post('/api/orders', async (req, res) => {
   const resolved = resolveItems(items);
   if (!resolved.length) throw new HttpError(400, '유효한 항목이 없습니다. 다시 선택해 주세요.');
 
+  const serviceDate = normalizeServiceDate(body.serviceDate);
+  const serviceTime = String(body.serviceTime || '').trim().slice(0, 30) || null;
+
   // 유형은 이용자가 직접 고른 항목으로 판정한다(자동 부가되는 취급비는 제외).
   const pickedCare = resolved.some((i) => i.source === CARE_SOURCE);
   const pickedMarket = resolved.some((i) => i.source === MARKET_SOURCE);
@@ -147,12 +150,14 @@ router.post('/api/orders', async (req, res) => {
     const orderRes = run(
       `INSERT INTO orders(order_no, member_id, applicant_name, applicant_phone, applicant_birth, address,
                           emergency_phone, proxy_name, proxy_relation, proxy_phone, type, status,
-                          care_amount, market_amount, total_amount, point_earn, channel, note, ym)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,'접수',?,?,?,?,?,?,?)`,
+                          care_amount, market_amount, total_amount, point_earn, service_date, service_time,
+                          channel, note, ym)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,'접수',?,?,?,?,?,?,?,?,?)`,
       orderNo, member.id, name, phone, applicant.birth || null, applicant.address || null,
       applicant.emergencyPhone || null, applicant.proxyName || null, applicant.proxyRelation || null,
       normalizePhone(applicant.proxyPhone) || null, orderType,
-      careAmount, marketAmount, total, pointEarn, body.channel || '웹', body.note || null, targetYm
+      careAmount, marketAmount, total, pointEarn, serviceDate, serviceTime,
+      body.channel || '웹', body.note || null, targetYm
     );
     const orderId = Number(orderRes.lastInsertRowid);
 
@@ -208,6 +213,7 @@ router.get('/api/orders/:orderNo', (req, res, ctx) => {
       orderNo: order.order_no, type: order.type, status: order.status,
       total: order.total_amount, careAmount: order.care_amount, marketAmount: order.market_amount,
       pointEarn: order.point_earn, createdAt: order.created_at,
+      serviceDate: order.service_date, serviceTime: order.service_time,
     },
     items: all('SELECT name, category, unit, unit_price, qty, subtotal FROM order_items WHERE order_id = ?', order.id),
     history: all('SELECT from_status, to_status, memo, created_at FROM order_logs WHERE order_id = ? ORDER BY id', order.id),
@@ -215,6 +221,22 @@ router.get('/api/orders/:orderNo', (req, res, ctx) => {
 });
 
 // ---- helpers ----
+
+/** 서비스 희망일 검증: YYYY-MM-DD 형식, 오늘 이후 90일 이내 */
+function normalizeServiceDate(value) {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new HttpError(400, '서비스 희망일 형식이 올바르지 않습니다.');
+  const target = new Date(`${v}T00:00:00`);
+  if (Number.isNaN(target.getTime())) throw new HttpError(400, '서비스 희망일이 올바르지 않습니다.');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (target < today) throw new HttpError(400, '서비스 희망일은 오늘 이후로 정해 주세요.');
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + 90);
+  if (target > limit) throw new HttpError(400, '서비스 희망일은 90일 이내로 정해 주세요.');
+  return v;
+}
 
 function sum(list) {
   return list.reduce((a, b) => a + b, 0);
@@ -257,4 +279,4 @@ function publicMember(m) {
   return { id: m.id, name: m.name, phone: m.phone, address: m.address, birth: m.birth, points: m.points };
 }
 
-module.exports = { router, normalizePhone, nextOrderNo, resolveItems, consentItems };
+module.exports = { router, normalizePhone, nextOrderNo, resolveItems, consentItems, normalizeServiceDate };
