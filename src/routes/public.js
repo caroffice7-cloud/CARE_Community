@@ -114,7 +114,7 @@ router.post('/api/orders', async (req, res) => {
   if (marketSum > 0 && marketSum < threshold) {
     const fee = get("SELECT * FROM menu_items WHERE name = '소액주문 취급비'");
     if (fee && !resolved.some((i) => i.refId === fee.id && i.source === CARE_SOURCE)) {
-      resolved.push(toLine(CARE_SOURCE, fee.id, fee.name, fee.category, fee.unit, fee.price, 0, 1));
+      resolved.push(toLine(CARE_SOURCE, fee.id, fee.name, fee.category, fee.unit, fee.price, 0, 1, fee.cost_price || 0));
     }
   }
 
@@ -247,7 +247,7 @@ function resolveItems(items) {
     } else {
       const item = get('SELECT * FROM menu_items WHERE id = ? AND active = 1', raw.refId);
       if (!item) continue;
-      lines.push(toLine(CARE_SOURCE, item.id, item.name, item.category, item.unit, item.price, item.point_earn, qty));
+      lines.push(toLine(CARE_SOURCE, item.id, item.name, item.category, item.unit, item.price, item.point_earn, qty, item.cost_price || 0));
     }
   }
   return lines;

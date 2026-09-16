@@ -88,26 +88,37 @@ router.patch('/api/admin/orders/:id/status', async (req, res, ctx) => {
   if (!order) throw new HttpError(404, '주문을 찾을 수 없습니다.');
   if (order.status === status) return sendJson(res, 200, { ok: true, unchanged: true });
 
+  // 취소 위약금: 운영 기준상 서비스 24시간 전 취소는 전액 환불, 당일 취소는 50% 부과.
+  // 서비스 예정일은 현장에서 정해지므로 취소 처리 시 담당자가 유형을 고른다.
+  const refundType = status === '취소' ? (body.refundType === '당일취소' ? '당일취소' : '전액환불') : null;
+  const cancelFee = refundType === '당일취소' ? Math.round(order.total_amount * 0.5) : 0;
+
   tx(() => {
-    // 취소로 전환하면 사용액과 적립 포인트를 되돌린다.
+    // 취소로 전환하면 사용액과 적립 포인트를 되돌린다(위약금은 차감된 채로 남긴다).
     if (status === '취소' && order.status !== '취소' && order.member_id) {
-      balance.applyUsage(order.member_id, order.ym, -order.total_amount);
+      balance.applyUsage(order.member_id, order.ym, -(order.total_amount - cancelFee));
       if (order.point_earn) balance.addPoints(order.member_id, -order.point_earn);
     }
     if (order.status === '취소' && status !== '취소' && order.member_id) {
-      balance.applyUsage(order.member_id, order.ym, order.total_amount);
+      balance.applyUsage(order.member_id, order.ym, order.total_amount - (order.cancel_fee || 0));
       if (order.point_earn) balance.addPoints(order.member_id, order.point_earn);
     }
-    run("UPDATE orders SET status = ?, updated_at = datetime('now','localtime') WHERE id = ?", status, order.id);
+    run("UPDATE orders SET status = ?, cancel_fee = ?, refund_type = ?, updated_at = datetime('now','localtime') WHERE id = ?",
+      status, status === '취소' ? cancelFee : 0, refundType, order.id);
+    const memo = status === '취소'
+      ? [refundType === '당일취소'
+          ? `당일 취소 — 위약금 ${cancelFee.toLocaleString('ko-KR')}원(50%) 부과, ${(order.total_amount - cancelFee).toLocaleString('ko-KR')}원 환불`
+          : '24시간 전 취소 — 전액 환불', body.memo].filter(Boolean).join(' / ')
+      : body.memo || null;
     run('INSERT INTO order_logs(order_id, from_status, to_status, memo) VALUES(?,?,?,?)',
-      order.id, order.status, status, body.memo || null);
+      order.id, order.status, status, memo);
 
     if (status === '결제완료') {
       run("UPDATE payment_requests SET status = '완료', approved_at = datetime('now','localtime') WHERE order_id = ?", order.id);
     }
   });
 
-  sendJson(res, 200, { ok: true, status });
+  sendJson(res, 200, { ok: true, status, refundType, cancelFee });
 });
 
 router.patch('/api/admin/orders/:id', async (req, res, ctx) => {
@@ -313,9 +324,9 @@ router.put('/api/admin/menu-items/:id', async (req, res, ctx) => {
   const item = get('SELECT * FROM menu_items WHERE id = ?', Number(ctx.params.id));
   if (!item) throw new HttpError(404, '메뉴 항목을 찾을 수 없습니다.');
   run(
-    'UPDATE menu_items SET name = ?, category = ?, description = ?, unit = ?, price = ?, point_earn = ?, free_label = ?, active = ? WHERE id = ?',
+    'UPDATE menu_items SET name = ?, category = ?, description = ?, unit = ?, price = ?, cost_price = ?, point_earn = ?, free_label = ?, active = ? WHERE id = ?',
     b.name ?? item.name, b.category ?? item.category, b.description ?? item.description, b.unit ?? item.unit,
-    Number(b.price ?? item.price), Number(b.pointEarn ?? item.point_earn),
+    Number(b.price ?? item.price), Number(b.costPrice ?? item.cost_price), Number(b.pointEarn ?? item.point_earn),
     b.freeLabel !== undefined ? b.freeLabel : item.free_label,
     b.active !== undefined ? (b.active ? 1 : 0) : item.active, item.id
   );
@@ -327,9 +338,9 @@ router.post('/api/admin/menu-items', async (req, res) => {
   const b = await readJson(req);
   if (!b.name || !b.category) throw new HttpError(400, '분류와 서비스명을 입력해 주세요.');
   const ins = run(
-    'INSERT INTO menu_items(category, name, description, unit, price, point_earn, free_label, sort_order) VALUES(?,?,?,?,?,?,?,?)',
-    b.category, b.name, b.description || null, b.unit || null, Number(b.price || 0), Number(b.pointEarn || 0),
-    b.freeLabel || null, Number(get('SELECT IFNULL(MAX(sort_order), 0) + 1 AS n FROM menu_items').n)
+    'INSERT INTO menu_items(category, name, description, unit, price, cost_price, point_earn, free_label, sort_order) VALUES(?,?,?,?,?,?,?,?,?)',
+    b.category, b.name, b.description || null, b.unit || null, Number(b.price || 0), Number(b.costPrice || 0),
+    Number(b.pointEarn || 0), b.freeLabel || null, Number(get('SELECT IFNULL(MAX(sort_order), 0) + 1 AS n FROM menu_items').n)
   );
   sendJson(res, 201, { ok: true, id: Number(ins.lastInsertRowid) });
 });
@@ -384,6 +395,13 @@ function settlementData(query) {
     ...params
   );
 
+  // 취소 위약금(당일 취소 50%)은 취소 건에서 발생한 수입이므로 따로 집계한다.
+  const cancelFees = get(
+    `SELECT IFNULL(SUM(cancel_fee), 0) AS amount, COUNT(*) AS count FROM orders
+     WHERE status = '취소' AND cancel_fee > 0 AND date(created_at) BETWEEN date(?) AND date(?)`,
+    from, to
+  );
+
   const totals = { revenue: 0, cost: 0, margin: 0, care: 0, market: 0, orders: new Set() };
   const byMember = new Map();
   for (const l of lines) {
@@ -401,10 +419,26 @@ function settlementData(query) {
     agg.orders.add(l.order_no);
     byMember.set(key, agg);
   }
+  totals.cancelFee = cancelFees.amount;
+  totals.cancelCount = cancelFees.count;
+  totals.revenue += cancelFees.amount;
   totals.margin = totals.revenue - totals.cost;
 
+  // 돌봄서비스는 인건비가 원가이므로, 원가를 입력하지 않은 항목이 있으면 마진이 과대 계상된다.
+  const missingCost = lines.filter((l) => l.source !== 'market' && !l.cost_price && l.subtotal > 0);
+  const missingCostNames = [...new Set(missingCost.map((l) => l.item_name))];
+
+  const cancelLines = all(
+    `SELECT o.order_no, o.created_at, o.status, o.type, m.name AS member_name, m.phone, o.cancel_fee, o.refund_type
+     FROM orders o LEFT JOIN members m ON m.id = o.member_id
+     WHERE o.status = '취소' AND o.cancel_fee > 0 AND date(o.created_at) BETWEEN date(?) AND date(?)
+     ORDER BY o.id`, from, to);
+
   return {
-    from, to, lines,
+    from, to, lines, cancelLines,
+    costWarning: missingCostNames.length
+      ? { count: missingCostNames.length, amount: missingCost.reduce((a, b) => a + b.subtotal, 0), names: missingCostNames.slice(0, 8) }
+      : null,
     totals: { ...totals, orders: totals.orders.size },
     byMember: [...byMember.values()].map((m) => ({ ...m, orders: m.orders.size, margin: m.revenue - m.cost })),
   };
@@ -426,7 +460,11 @@ router.get('/api/admin/settlement.csv', (req, res, ctx) => {
       l.source === 'market' ? '장보기' : '돌봄서비스', l.category, l.item_name,
       l.unit_price, l.cost_price, l.qty, l.subtotal,
       (l.cost_price || 0) * l.qty, l.subtotal - (l.cost_price || 0) * l.qty,
-    ])
+    ]).concat(data.cancelLines.map((c) => [
+      c.order_no, c.created_at, c.status, c.type, c.member_name, c.phone,
+      '취소 위약금', c.refund_type || '당일취소', '당일 취소 위약금(50%)',
+      c.cancel_fee, 0, 1, c.cancel_fee, 0, c.cancel_fee,
+    ]))
   );
   sendCsv(res, `정산내역_${data.from}_${data.to}.csv`, csv);
 });

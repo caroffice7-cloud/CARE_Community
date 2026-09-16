@@ -161,8 +161,19 @@ function applyOrderFilter() {
 }
 
 async function changeStatus(id, status) {
+  const body = { status };
+  if (status === '취소') {
+    // 운영 기준: 서비스 24시간 전 취소는 전액 환불, 당일 취소는 50% 부과
+    const sameDay = confirm(
+      '취소 처리 방식을 선택하세요.\n\n' +
+      '[확인] 당일 취소 — 이용료의 50%를 위약금으로 부과하고 나머지만 잔액으로 돌려줍니다.\n' +
+      '[취소] 24시간 전 취소 — 전액 환불(잔액 전부 복원)합니다.'
+    );
+    body.refundType = sameDay ? '당일취소' : '전액환불';
+  }
   try {
-    await api(`/api/admin/orders/${id}/status`, { method: 'PATCH', body: { status } });
+    const d = await api(`/api/admin/orders/${id}/status`, { method: 'PATCH', body });
+    if (d.cancelFee) alert(`위약금 ${won(d.cancelFee)}을 부과하고 나머지를 환불 처리했습니다.`);
     renderOrders();
   } catch (err) { alert(err.message); renderOrders(); }
 }
@@ -459,18 +470,29 @@ async function renderMenus() {
         <input id="nfName" placeholder="서비스명">
         <input id="nfUnit" placeholder="단위 (예: 1회)">
         <input id="nfPrice" type="number" placeholder="단가">
+        <input id="nfCost" type="number" placeholder="원가(인건비 등)">
         <input id="nfPoint" type="number" placeholder="적립 포인트">
         <button class="btn btn-sm btn-primary" onclick="addMenuItem()">추가</button>
       </div>
+      <p class="mini" style="margin-top:8px">
+        원가는 정산 마진 계산에 쓰입니다. 돌봄서비스는 인건비가 주 원가이며,
+        운영 기준상 직접 서비스 인건비는 시간당 15,000~16,000원(가사간병·일상돌봄 바우처 단가 준용)입니다.
+        원가를 비워 두면 정산에서 해당 항목의 마진이 매출과 같게 잡히므로 과대 계상됩니다.
+      </p>
     </div>
     <div class="table-scroll"><table>
-      <thead><tr><th>분류</th><th>서비스명</th><th>설명</th><th>단위</th><th class="num">단가</th><th class="num">적립P</th><th>사용</th><th></th></tr></thead>
+      <thead><tr><th>분류</th><th>서비스명</th><th>설명</th><th>단위</th><th class="num">단가</th>
+        <th class="num">원가</th><th class="num">마진</th><th class="num">적립P</th><th>사용</th><th></th></tr></thead>
       <tbody>${d.items.map((m) => `<tr data-id="${m.id}">
         <td><input class="inline-edit" value="${esc(m.category)}" data-f="category" style="width:110px"></td>
         <td><input class="inline-edit" value="${esc(m.name)}" data-f="name"></td>
         <td><input class="inline-edit mini" value="${esc(m.description)}" data-f="description"></td>
         <td><input class="inline-edit" value="${esc(m.unit)}" data-f="unit" style="width:80px"></td>
         <td class="num"><input class="inline-edit" type="number" value="${m.price}" data-f="price" style="text-align:right;width:100px"></td>
+        <td class="num"><input class="inline-edit" type="number" value="${m.cost_price || 0}" data-f="costPrice" style="text-align:right;width:100px"></td>
+        <td class="num">${m.price > 0 && !m.cost_price
+          ? '<span class="mini" style="color:var(--amber-600)">원가 미입력</span>'
+          : `${won(m.price - (m.cost_price || 0))}${m.price > 0 ? ` <span class="mini">(${Math.round(((m.price - (m.cost_price || 0)) / m.price) * 100)}%)</span>` : ''}`}</td>
         <td class="num"><input class="inline-edit" type="number" value="${m.point_earn}" data-f="pointEarn" style="text-align:right;width:90px"></td>
         <td>${m.active ? '사용중' : '중지'}</td>
         <td><button class="btn btn-sm btn-primary" onclick="saveMenuItem(${m.id})">저장</button></td>
@@ -487,7 +509,8 @@ async function addMenuItem() {
     await api('/api/admin/menu-items', {
       method: 'POST',
       body: { category: $('nfCategory').value.trim(), name: $('nfName').value.trim(), unit: $('nfUnit').value.trim(),
-              price: Number($('nfPrice').value || 0), pointEarn: Number($('nfPoint').value || 0) },
+              price: Number($('nfPrice').value || 0), costPrice: Number($('nfCost').value || 0),
+              pointEarn: Number($('nfPoint').value || 0) },
     });
     renderMenus();
   } catch (err) { alert(err.message); }
@@ -518,7 +541,13 @@ async function renderSettlement(from, to) {
       <div class="kpi"><div class="k">마진</div><div class="v">${won(d.totals.margin)}</div></div>
       <div class="kpi"><div class="k">돌봄서비스</div><div class="v">${won(d.totals.care)}</div></div>
       <div class="kpi"><div class="k">장보기</div><div class="v">${won(d.totals.market)}</div></div>
+      ${d.totals.cancelFee ? `<div class="kpi warn"><div class="k">취소 위약금 (${d.totals.cancelCount}건)</div><div class="v">${won(d.totals.cancelFee)}</div></div>` : ''}
     </div>
+    ${d.costWarning ? `<div class="alert alert-warn">
+      원가가 입력되지 않은 돌봄서비스 항목 ${d.costWarning.count}종(매출 ${won(d.costWarning.amount)})이 있어 마진이 실제보다 크게 잡힙니다.
+      <br><span class="mini">${d.costWarning.names.map(esc).join(', ')}${d.costWarning.count > d.costWarning.names.length ? ' 외' : ''}
+      → "돌봄 메뉴 단가" 화면에서 원가를 입력해 주세요.</span>
+    </div>` : ''}
     <div class="panel">
       <h3>회원별 집계</h3>
       <table><thead><tr><th>회원</th><th>연락처</th><th class="num">건수</th><th class="num">돌봄</th><th class="num">장보기</th><th class="num">합계</th><th class="num">매입원가</th><th class="num">마진</th></tr></thead>

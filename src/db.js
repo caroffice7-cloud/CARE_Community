@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
   description TEXT,
   unit        TEXT,
   price       INTEGER NOT NULL DEFAULT 0,
+  cost_price  INTEGER NOT NULL DEFAULT 0,
   point_earn  INTEGER NOT NULL DEFAULT 0,
   free_label  TEXT,
   sort_order  INTEGER NOT NULL DEFAULT 0,
@@ -107,6 +108,8 @@ CREATE TABLE IF NOT EXISTS orders (
   market_amount   INTEGER NOT NULL DEFAULT 0,
   total_amount    INTEGER NOT NULL DEFAULT 0,
   point_earn      INTEGER NOT NULL DEFAULT 0,
+  cancel_fee      INTEGER NOT NULL DEFAULT 0,
+  refund_type     TEXT,
   channel         TEXT NOT NULL DEFAULT '웹',
   note            TEXT,
   ym              TEXT NOT NULL,
@@ -171,6 +174,18 @@ CREATE TABLE IF NOT EXISTS settings (
 `;
 
 db.exec(SCHEMA);
+
+/** 이미 만들어진 데이터베이스에 컬럼을 더한다(있으면 건너뜀). */
+function ensureColumn(table, column, definition) {
+  const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+// 돌봄서비스 원가(인건비·자재비 등) — 정산 마진 계산용
+ensureColumn('menu_items', 'cost_price', 'INTEGER NOT NULL DEFAULT 0');
+// 취소 위약금(당일 취소 50% 부과 규정) 기록
+ensureColumn('orders', 'cancel_fee', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('orders', 'refund_type', 'TEXT');
 
 function get(sql, ...params) {
   return db.prepare(sql).get(...params);
