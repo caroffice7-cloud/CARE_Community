@@ -16,7 +16,7 @@ const STATUSES = ['접수', '결제대기', '결제완료', '처리중', '완료
 // ---- 인증 ----
 router.post('/api/admin/login', async (req, res) => {
   const body = await readJson(req);
-  auth.login(res, body.password);
+  auth.login(res, body.password, req);
   sendJson(res, 200, { ok: true });
 });
 

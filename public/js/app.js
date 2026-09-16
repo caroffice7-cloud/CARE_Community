@@ -11,6 +11,9 @@ const state = {
 
 const won = (n) => `${Number(n || 0).toLocaleString('ko-KR')}원`;
 const $ = (id) => document.getElementById(id);
+/** 화면에 글자로 넣기 전에 HTML 특수문자를 막는다 */
+const esc = (v) => String(v == null ? '' : v)
+  .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -29,7 +32,7 @@ async function init() {
     state.catalog = await api('/api/catalog');
   } catch (err) {
     document.querySelector('main').insertAdjacentHTML('afterbegin',
-      `<div class="alert alert-error">메뉴 정보를 불러오지 못했습니다: ${err.message}</div>`);
+      `<div class="alert alert-error">메뉴 정보를 불러오지 못했습니다: ${esc(err.message)}</div>`);
     return;
   }
   $('serviceName').textContent = state.catalog.settings.serviceName;
@@ -69,7 +72,7 @@ async function lookupMember() {
   try {
     const data = await api('/api/member/lookup', { method: 'POST', body: { name, phone } });
     if (!data.found) {
-      box.innerHTML = `<div class="alert alert-warn">${data.message}</div>`;
+      box.innerHTML = `<div class="alert alert-warn">${esc(data.message)}</div>`;
       state.member = null; state.balance = null;
       $('fName').value = name; $('fPhone').value = phone;
       renderBalance();
@@ -77,7 +80,7 @@ async function lookupMember() {
     }
     state.member = data.member;
     state.balance = data.balance;
-    box.innerHTML = `<div class="alert alert-ok">${data.member.name} 님, 이번 달 사용 가능 금액은 ${won(data.balance.available)} 입니다.</div>`;
+    box.innerHTML = `<div class="alert alert-ok">${esc(data.member.name)} 님, 이번 달 사용 가능 금액은 ${won(data.balance.available)} 입니다.</div>`;
     $('fName').value = data.member.name;
     $('fPhone').value = data.member.phone;
     if (data.member.address) $('fAddress').value = data.member.address;
@@ -85,7 +88,7 @@ async function lookupMember() {
     renderBalance();
     renderCart();
   } catch (err) {
-    box.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
   }
 }
 
@@ -123,9 +126,9 @@ function renderPackages() {
   const box = $('packages');
   box.innerHTML = state.catalog.packages.map((p) => {
     const total = p.items.reduce((a, i) => a + i.amount, 0);
-    const list = p.items.map((i) => `<li>${i.label} — ${won(i.amount)}${i.budget_only ? ' <span class="muted">(장보기 예산)</span>' : ''}</li>`).join('');
+    const list = p.items.map((i) => `<li>${esc(i.label)} — ${won(i.amount)}${i.budget_only ? ' <span class="muted">(장보기 예산)</span>' : ''}</li>`).join('');
     return `<div class="pkg">
-      <h4>${p.name}</h4>
+      <h4>${esc(p.name)}</h4>
       <div class="muted">${p.target || ''}</div>
       ${p.items.length ? `<ul>${list}</ul><div class="total">합계 ${won(total)}</div>
         <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="applyPackage(${p.id})">이 패키지 담기</button>`
@@ -183,7 +186,7 @@ function renderMenu() {
           ? `<div class="price">${won(item.price)} <span class="muted">/ ${item.unit || ''}</span></div>`
           : `<div class="free">${item.free_label || '무료'}</div>`;
       return `<div class="item ${inCart ? 'picked' : ''}">
-        <div class="name">${item.name}</div>
+        <div class="name">${esc(item.name)}</div>
         <div class="desc">${item.description || ''}</div>
         ${priceHtml}
         <div class="actions">${qtyControl('care', item.id, inCart ? inCart.qty : 0)}</div>
@@ -201,7 +204,7 @@ function renderMarket() {
   $('marketArea').innerHTML = items.length ? items.map((item) => {
     const inCart = state.cart.get(`market:${item.id}`);
     return `<div class="item ${inCart ? 'picked' : ''}">
-      <div class="name">${item.name}</div>
+      <div class="name">${esc(item.name)}</div>
       <div class="desc">${item.category || ''} · ${item.unit || ''}</div>
       <div class="price">${won(item.sale_price)}</div>
       <div class="actions">${qtyControl('market', item.id, inCart ? inCart.qty : 0)}</div>
@@ -270,12 +273,12 @@ async function parseKakao() {
     renderMarket();
     renderCart();
     const unmatched = data.unmatched.length
-      ? `<br><b>찾지 못한 내용:</b> ${data.unmatched.join(', ')} — 직접 골라 담아 주세요.` : '';
+      ? `<br><b>찾지 못한 내용:</b> ${esc(data.unmatched.join(', '))} — 직접 골라 담아 주세요.` : '';
     box.innerHTML = `<div class="alert alert-ok">${data.items.length}개 품목을 담았습니다.${unmatched}</div>`;
     if (data.name && !$('fName').value) $('fName').value = data.name;
     if (data.phone && !$('fPhone').value) $('fPhone').value = data.phone;
   } catch (err) {
-    box.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
   }
 }
 
@@ -302,7 +305,7 @@ function renderCart() {
     box.innerHTML = lines.map((l) => `
       <div class="cart-line">
         <span class="tag ${l.source === 'market' ? 'market' : ''}">${l.source === 'market' ? '장보기' : '돌봄'}</span>
-        <span class="n">${l.name}<br><span class="muted">${won(l.price)} × ${l.qty}${l.pointEarn ? ` · 적립 +${(l.pointEarn * l.qty).toLocaleString('ko-KR')}P` : ''}</span></span>
+        <span class="n">${esc(l.name)}<br><span class="muted">${won(l.price)} × ${l.qty}${l.pointEarn ? ` · 적립 +${(l.pointEarn * l.qty).toLocaleString('ko-KR')}P` : ''}</span></span>
         <b>${won(l.price * l.qty)}</b>
         <button class="btn btn-ghost btn-sm" onclick="changeQty('${l.source}',${l.refId},-999)">삭제</button>
       </div>`).join('');
@@ -331,7 +334,7 @@ function renderCart() {
 
 function flash(targetId, message) {
   const el = $(targetId);
-  el.insertAdjacentHTML('afterbegin', `<div class="alert alert-ok">${message}</div>`);
+  el.insertAdjacentHTML('afterbegin', `<div class="alert alert-ok">${esc(message)}</div>`);
 }
 
 /* ── 동의 ── */
@@ -339,7 +342,7 @@ function renderConsents() {
   $('consentArea').innerHTML = state.catalog.consentItems.map((c) => `
     <label class="consent">
       <input type="checkbox" data-consent="${c.key}" ${c.required ? 'data-required="1"' : ''}>
-      <span>${c.label}</span>
+      <span>${esc(c.label)}</span>
     </label>`).join('') +
     `<button class="btn btn-ghost btn-sm" onclick="checkAllConsents()">모두 동의</button>`;
 }
@@ -390,13 +393,13 @@ async function submitOrder() {
     box.innerHTML = `<div class="card" style="border-color:var(--green-600)">
         <h3>접수되었습니다</h3>
         <p>담당자가 확인 후 연락드립니다.</p>
-        <p style="font-size:1.4rem;font-weight:800">접수번호 <span style="color:var(--green-700)">${data.orderNo}</span></p>
-        <p class="muted">신청 금액 ${won(data.summary.total)} · ${data.payment.note}</p>
+        <p style="font-size:1.4rem;font-weight:800">접수번호 <span style="color:var(--green-700)">${esc(data.orderNo)}</span></p>
+        <p class="muted">신청 금액 ${won(data.summary.total)} · ${esc(data.payment.note)}</p>
         <p class="muted">이번 달 남은 금액 ${won(data.balance.available)}</p>
       </div>`;
     box.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (err) {
-    box.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
     box.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } finally {
     $('submitBtn').disabled = false;
