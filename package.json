@@ -1,0 +1,16 @@
+{
+  "name": "boseong-care-order",
+  "version": "1.0.0",
+  "private": true,
+  "description": "보성군 지역화폐 기반 통합돌봄 주문관리 시스템",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node src/seed.js",
+    "reset": "node src/seed.js --reset"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

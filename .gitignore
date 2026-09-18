@@ -1,0 +1,12 @@
+node_modules/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+.env
+.DS_Store
+
+# 홈서버 운영 중 생기는 파일 (백업·로그·개인 설정)
+홈서버/backups/
+홈서버/logs/
+홈서버/설정.json
