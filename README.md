@@ -41,6 +41,9 @@ npm run reset    # 메뉴판·가격표를 설계서 기준으로 초기화 후 
 ```
 
 **서버에 올리기 전에 내 PC에서 먼저 보시려면** → **[docs/내PC에서-먼저-보기.md](docs/내PC에서-먼저-보기.md)**
+
+**호스팅을 빌리지 않고 집·사무실 PC에서 상시로 돌리시려면** → **[docs/홈서버-구축.md](docs/홈서버-구축.md)**
+(`홈서버\홈서버-켜기.bat` 더블클릭 · 자동 재시작 · 매일 자동 백업 · Cloudflare Tunnel 외부 공개)
 (윈도우는 `시작하기-윈도우.bat`, 맥은 `시작하기-맥용.command` 를 더블클릭하면 됩니다)
 
 실제 서버에 올리는 절차(설치·HTTPS·자동 백업·점검표)는 **[docs/DEPLOY.md](docs/DEPLOY.md)** 에 정리해 두었습니다.
@@ -164,7 +167,7 @@ src/lib/csv.js         엑셀 한글 호환 CSV
 src/routes/public.js   고객 화면 API
 src/routes/admin.js    운영자 화면 API
 public/                고객 화면 · 운영자 화면 (바닐라 JS, 빌드 불필요)
-docs/                  기술설계서 원본, 배포 가이드(DEPLOY.md)
+docs/                  기술설계서 원본, 배포 가이드(DEPLOY.md), 홈서버 구축 가이드
 legacy/                기존 저장소에 있던 게시판 템플릿(미사용, 보존용)
 ```
 
